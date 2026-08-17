@@ -112,6 +112,20 @@ export default {
     ctx
   ) {
 
+    // ==============================================
+    // LOG UNTUK MEMASTIKAN CRON BERJALAN
+    // ==============================================
+
+    console.log(
+      "CRON BERJALAN:",
+      new Date().toISOString()
+    );
+
+
+    // ==============================================
+    // JALANKAN EXPIRE FILES
+    // ==============================================
+
     ctx.waitUntil(
 
       expireFiles(
