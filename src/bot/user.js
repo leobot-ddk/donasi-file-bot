@@ -191,7 +191,7 @@ export async function getSession(
 // Salinan permanen di grup admin.
 // Protect Content = false.
 //
-// Ditambahkan tombol:
+// Tombol:
 // 👤 User Pengirim
 //
 // ======================================================
@@ -451,12 +451,51 @@ export async function handleStart(
   // ====================================================
   // KIRIM FILE
   // ====================================================
+  //
+  // PENTING:
+  // sendFile mengembalikan hasil Telegram API.
+  // Hasil tersebut berisi message_id.
+  //
+  // message_id disimpan agar expiry.js dapat
+  // menghapus pesan file ketika expired.
+  //
+  // ====================================================
 
-  await sendFile(
-    env,
-    chatId,
-    file
-  );
+  const sentMessage =
+    await sendFile(
+      env,
+      chatId,
+      file
+    );
+
+
+  // ====================================================
+  // SIMPAN PESAN FILE BOT
+  // ====================================================
+
+  if (
+    sentMessage &&
+    sentMessage.message_id
+  ) {
+
+    await update(
+      env,
+      "files",
+      `id=eq.${encodeURIComponent(
+        file.id
+      )}`,
+      {
+
+        sent_chat_id:
+          chatId,
+
+        sent_message_id:
+          sentMessage.message_id
+
+      }
+    );
+
+  }
 
 }
 
@@ -1309,18 +1348,16 @@ export async function handleDurationText(
 // HANDLE TEXT
 // ======================================================
 //
-// PENTING:
+// Setelah user memilih Protect/Public:
+// step = caption
 //
-// Setelah user memilih Protect/Public,
-// user berada di step "caption".
+// Text berikutnya menjadi caption.
 //
-// Jadi text berikutnya dianggap caption.
+// Setelah caption:
+// step = duration
 //
-// Setelah caption disimpan,
-// step berubah menjadi "duration".
-//
-// Saat custom duration dipilih,
-// step berubah menjadi "custom_duration".
+// Custom duration:
+// step = custom_duration
 //
 // ======================================================
 
@@ -1466,6 +1503,28 @@ export async function handleText(
 
 // ======================================================
 // SEND FILE
+// ======================================================
+//
+// PENTING:
+//
+// Fungsi ini sekarang mengembalikan hasil Telegram API.
+//
+// Contoh hasil:
+//
+// {
+//   message_id: 123,
+//   chat: {...},
+//   document: {...}
+// }
+//
+// message_id digunakan handleStart() untuk menyimpan:
+//
+// sent_chat_id
+// sent_message_id
+//
+// Dengan begitu expiry.js dapat menghapus pesan file
+// yang dikirim bot setelah masa berlaku habis.
+//
 // ======================================================
 
 export async function sendFile(
