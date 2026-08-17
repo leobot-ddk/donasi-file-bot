@@ -10,6 +10,7 @@ import {
 
 import {
   insert,
+  select,
   selectOne,
   update,
   remove
@@ -344,7 +345,7 @@ async function copyOriginalToAdminGroup(
     //
     // karena dapat ditolak Telegram.
     //
-    // Sebagai gantinya tombol hanya menampilkan
+    // Tombol hanya menampilkan:
     // nama + ID user.
     //
     // ==================================================
@@ -365,6 +366,7 @@ async function copyOriginalToAdminGroup(
                 `admin:user:${String(
                   userId || ""
                 ).slice(0, 50)}`
+
             }
 
           ]
@@ -399,9 +401,7 @@ async function copyOriginalToAdminGroup(
         userId,
 
         username:
-
-          username ||
-          null,
+          username || null,
 
         result
 
@@ -1050,6 +1050,79 @@ export async function setDuration(
 
 
 // ======================================================
+// GET ACTIVE ADMIN CAPTION
+// ======================================================
+//
+// Caption yang digunakan adalah caption terbaru
+// dari tabel admin_captions.
+//
+// Jika tidak ada caption admin:
+// caption_admin = null
+//
+// ======================================================
+
+async function getActiveAdminCaption(
+  env
+) {
+
+  try {
+
+    const captions =
+      await select(
+        env,
+        "admin_captions",
+        "select=id,caption,created_at&order=id.desc&limit=1"
+      );
+
+
+    if (
+      !captions ||
+      !captions.length
+    ) {
+
+      return null;
+
+    }
+
+
+    const caption =
+      captions[0]?.caption;
+
+
+    if (
+      caption === null ||
+      caption === undefined
+    ) {
+
+      return null;
+
+    }
+
+
+    const value =
+      String(
+        caption
+      ).trim();
+
+
+    return value ||
+      null;
+
+  } catch (error) {
+
+    console.error(
+      "GET ACTIVE ADMIN CAPTION ERROR:",
+      error
+    );
+
+    return null;
+
+  }
+
+}
+
+
+// ======================================================
 // CREATE FILE
 // ======================================================
 
@@ -1089,6 +1162,16 @@ export async function createFileFromSession(
   }
 
 
+  // ====================================================
+  // AMBIL CAPTION ADMIN TERBARU
+  // ====================================================
+
+  const adminCaption =
+    await getActiveAdminCaption(
+      env
+    );
+
+
   const rows =
     await insert(
       env,
@@ -1123,7 +1206,7 @@ export async function createFileFromSession(
           null,
 
         caption_admin:
-          null,
+          adminCaption,
 
         protect_content:
           Boolean(
@@ -1345,12 +1428,23 @@ export async function finishFile(
       );
 
 
+    // ==================================================
+    // CAPTION ADMIN
+    // ==================================================
+    //
+    // Hanya:
+    // 📝 + isi caption admin
+    //
+    // Tidak ada teks tambahan.
+    //
+    // ==================================================
+
     if (
       file.caption_admin
     ) {
 
       channelText +=
-        "\n\n" +
+        "\n\n📝 " +
         file.caption_admin;
 
     }
@@ -1627,9 +1721,7 @@ export async function handleText(
 // SEND FILE
 // ======================================================
 //
-// PENTING:
-//
-// Fungsi ini sekarang mengembalikan hasil Telegram API.
+// Fungsi ini mengembalikan hasil Telegram API.
 //
 // message_id digunakan handleStart() untuk menyimpan:
 //
