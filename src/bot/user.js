@@ -189,10 +189,19 @@ export async function getSession(
 // - link
 //
 // Salinan permanen di grup admin.
-// Protect Content = false.
 //
-// Tombol:
-// 👤 User Pengirim
+// Jika user memiliki username:
+//   👤 User Pengirim
+//   -> https://t.me/username
+//
+// Jika user tidak memiliki username:
+//   👤 Nama User (ID: 123456789)
+//
+// Tidak menggunakan:
+//   tg://user?id=...
+//
+// karena dapat menyebabkan:
+//   BUTTON_USER_PRIVACY_RESTRICTED
 //
 // ======================================================
 
@@ -214,25 +223,77 @@ async function copyOriginalToAdminGroup(
 
   }
 
+
   const messageId =
     message.message_id;
 
   const sourceChatId =
     message.chat?.id;
 
-  const userId =
-    message.from?.id;
+  const user =
+    message.from;
+
 
   if (
     !messageId ||
     !sourceChatId
   ) {
 
+    console.warn(
+      "COPY FILE: source chat/message ID kosong.",
+      {
+        sourceChatId,
+        messageId
+      }
+    );
+
     return null;
 
   }
 
+
   try {
+
+    const username =
+      String(
+        user?.username ||
+        ""
+      ).trim();
+
+
+    const firstName =
+      String(
+        user?.first_name ||
+        ""
+      ).trim();
+
+
+    const lastName =
+      String(
+        user?.last_name ||
+        ""
+      ).trim();
+
+
+    const userId =
+      user?.id;
+
+
+    const fullName =
+      [
+        firstName,
+        lastName
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+
+
+    const displayName =
+      fullName ||
+      username ||
+      "User";
+
 
     const extra = {
 
@@ -243,10 +304,10 @@ async function copyOriginalToAdminGroup(
 
 
     // ==================================================
-    // TOMBOL USER PENGIRIM
+    // USER PUNYA USERNAME
     // ==================================================
 
-    if (userId) {
+    if (username) {
 
       extra.reply_markup = {
 
@@ -259,7 +320,9 @@ async function copyOriginalToAdminGroup(
                 "👤 User Pengirim",
 
               url:
-                `tg://user?id=${userId}`
+                `https://t.me/${encodeURIComponent(
+                  username
+                )}`
 
             }
 
@@ -272,13 +335,81 @@ async function copyOriginalToAdminGroup(
     }
 
 
-    return await copyMessage(
-      env,
-      groupId,
-      sourceChatId,
-      messageId,
-      extra
+    // ==================================================
+    // USER TIDAK PUNYA USERNAME
+    // ==================================================
+    //
+    // Jangan menggunakan:
+    // tg://user?id=...
+    //
+    // karena dapat ditolak Telegram.
+    //
+    // Sebagai gantinya tombol hanya menampilkan
+    // nama + ID user.
+    //
+    // ==================================================
+
+    else {
+
+      extra.reply_markup = {
+
+        inline_keyboard: [
+
+          [
+
+            {
+              text:
+                `👤 ${displayName} (ID: ${userId || "-"})`,
+
+              callback_data:
+                `admin:user:${String(
+                  userId || ""
+                ).slice(0, 50)}`
+            }
+
+          ]
+
+        ]
+
+      };
+
+    }
+
+
+    const result =
+      await copyMessage(
+        env,
+        groupId,
+        sourceChatId,
+        messageId,
+        extra
+      );
+
+
+    console.log(
+      "COPY FILE KE ADMIN GROUP BERHASIL:",
+      {
+
+        groupId,
+
+        sourceChatId,
+
+        messageId,
+
+        userId,
+
+        username:
+
+          username ||
+          null,
+
+        result
+
+      }
     );
+
+
+    return result;
 
   } catch (error) {
 
@@ -450,15 +581,6 @@ export async function handleStart(
 
   // ====================================================
   // KIRIM FILE
-  // ====================================================
-  //
-  // PENTING:
-  // sendFile mengembalikan hasil Telegram API.
-  // Hasil tersebut berisi message_id.
-  //
-  // message_id disimpan agar expiry.js dapat
-  // menghapus pesan file ketika expired.
-  //
   // ====================================================
 
   const sentMessage =
@@ -1508,14 +1630,6 @@ export async function handleText(
 // PENTING:
 //
 // Fungsi ini sekarang mengembalikan hasil Telegram API.
-//
-// Contoh hasil:
-//
-// {
-//   message_id: 123,
-//   chat: {...},
-//   document: {...}
-// }
 //
 // message_id digunakan handleStart() untuk menyimpan:
 //
