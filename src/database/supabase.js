@@ -57,9 +57,18 @@ export async function sb(
 
   if (!response.ok) {
 
-    throw new Error(
-      `Supabase ${response.status}: ${text}`
-    );
+  console.error(
+    "SUPABASE ERROR:",
+    {
+      status: response.status,
+      path,
+      response: text
+    }
+  );
+
+  throw new Error(
+    `Supabase ${response.status}: ${text}`
+  );
 
   }
 
