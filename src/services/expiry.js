@@ -16,11 +16,12 @@ import {
 // ======================================================
 //
 // Tugas:
-// 1. Cari file yang sudah expired
-// 2. Hapus file yang pernah dikirim bot
-// 3. Tandai file sebagai expired
+// 1. Cari file aktif yang mempunyai expires_at
+// 2. Cek expired menggunakan JavaScript
+// 3. Hapus pesan file dari Telegram
+// 4. Tandai file sebagai expired
 //
-// ALUR TIDAK DIUBAH.
+// ALUR BOT TIDAK DIUBAH.
 //
 // ======================================================
 
@@ -75,18 +76,18 @@ export async function expireFiles(
     // ==================================================
 
     const now =
-      new Date().toISOString();
+      Date.now();
 
 
     // ==================================================
-    // QUERY FILE EXPIRED
+    // AMBIL SEMUA FILE ACTIVE
+    // YANG MEMILIKI EXPIRES_AT
     // ==================================================
 
     const queryUrl =
       `${env.SUPABASE_URL}/rest/v1/files` +
-      `?expires_at=not.is.null` +
-      `&expires_at=lte.${encodeURIComponent(now)}` +
-      `&status=eq.active` +
+      `?status=eq.active` +
+      `&expires_at=not.is.null` +
       `&select=*`;
 
 
@@ -120,7 +121,7 @@ export async function expireFiles(
 
 
     // ==================================================
-    // SUPABASE ERROR
+    // CEK RESPONSE SUPABASE
     // ==================================================
 
     if (!response.ok) {
@@ -145,7 +146,7 @@ export async function expireFiles(
 
 
     // ==================================================
-    // PARSE RESPONSE
+    // PARSE JSON
     // ==================================================
 
     let files;
@@ -201,17 +202,61 @@ export async function expireFiles(
 
 
     // ==================================================
+    // FILTER EXPIRED DI JAVASCRIPT
+    // ==================================================
+
+    const expiredFiles =
+      files.filter(
+        file => {
+
+          if (
+            !file.expires_at
+          ) {
+
+            return false;
+
+          }
+
+          const expiresTime =
+            new Date(
+              file.expires_at
+            ).getTime();
+
+
+          if (
+            Number.isNaN(
+              expiresTime
+            )
+          ) {
+
+            return false;
+
+          }
+
+
+          return (
+            expiresTime <= now
+          );
+
+        }
+      );
+
+
+    // ==================================================
     // TIDAK ADA FILE EXPIRED
     // ==================================================
 
     if (
-      files.length === 0
+      expiredFiles.length === 0
     ) {
 
       return {
 
         ok:
           true,
+
+        checked:
+          files.length,
 
         expired:
           0,
@@ -233,15 +278,16 @@ export async function expireFiles(
     let deletedCount =
       0;
 
+
     const results = [];
 
 
     // ==================================================
-    // PROSES FILE
+    // PROSES FILE EXPIRED
     // ==================================================
 
     for (
-      const file of files
+      const file of expiredFiles
     ) {
 
       let telegramDeleted =
@@ -252,7 +298,7 @@ export async function expireFiles(
 
 
       // ================================================
-      // HAPUS PESAN FILE BOT
+      // HAPUS PESAN FILE DARI TELEGRAM
       // ================================================
 
       if (
@@ -295,6 +341,10 @@ export async function expireFiles(
       // TANDAI EXPIRED
       // ================================================
 
+      let updateError =
+        null;
+
+
       try {
 
         await update(
@@ -317,66 +367,53 @@ export async function expireFiles(
 
         expiredCount++;
 
-
-        results.push({
-
-          id:
-            file.id,
-
-          token:
-            file.token,
-
-          sent_chat_id:
-            file.sent_chat_id,
-
-          sent_message_id:
-            file.sent_message_id,
-
-          telegram_deleted:
-            telegramDeleted,
-
-          telegram_error:
-            telegramError,
-
-          status:
-            "expired"
-
-        });
-
       } catch (
         error
       ) {
 
-        results.push({
-
-          id:
-            file.id,
-
-          token:
-            file.token,
-
-          sent_chat_id:
-            file.sent_chat_id,
-
-          sent_message_id:
-            file.sent_message_id,
-
-          telegram_deleted:
-            telegramDeleted,
-
-          telegram_error:
-            telegramError,
-
-          status:
-            "update_failed",
-
-          update_error:
-            error?.message ||
-            String(error)
-
-        });
+        updateError =
+          error?.message ||
+          String(error);
 
       }
+
+
+      // ================================================
+      // HASIL FILE
+      // ================================================
+
+      results.push({
+
+        id:
+          file.id,
+
+        token:
+          file.token,
+
+        expires_at:
+          file.expires_at,
+
+        sent_chat_id:
+          file.sent_chat_id,
+
+        sent_message_id:
+          file.sent_message_id,
+
+        telegram_deleted:
+          telegramDeleted,
+
+        telegram_error:
+          telegramError,
+
+        status:
+          updateError
+            ? "update_failed"
+            : "expired",
+
+        update_error:
+          updateError
+
+      });
 
     }
 
@@ -390,14 +427,17 @@ export async function expireFiles(
       ok:
         true,
 
+      checked:
+        files.length,
+
+      found_expired:
+        expiredFiles.length,
+
       expired:
         expiredCount,
 
       deleted:
         deletedCount,
-
-      checked:
-        files.length,
 
       results
 
@@ -406,10 +446,6 @@ export async function expireFiles(
   } catch (
     error
   ) {
-
-    // ==================================================
-    // ERROR
-    // ==================================================
 
     return {
 
