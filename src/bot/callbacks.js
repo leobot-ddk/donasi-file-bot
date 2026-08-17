@@ -986,7 +986,7 @@ export async function handleCallback(
               "✏️ Masukkan durasi custom.\n\n" +
 
               "Contoh:\n" +
-              "30min\n" +
+              "1h\n" +
               "2h\n" +
               "1d\n" +
               "7d\n" +
