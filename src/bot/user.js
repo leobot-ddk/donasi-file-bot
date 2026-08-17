@@ -44,7 +44,7 @@ function createSessionId() {
 
 
 // ======================================================
-// GET USER SESSION TERBARU
+// GET SESSION TERBARU USER
 // ======================================================
 
 export async function getUserState(
@@ -87,7 +87,7 @@ export async function getSession(
 // GET FILE BY TOKEN
 // ======================================================
 
-export async function getFileByToken(
+async function getFileByToken(
   env,
   token
 ) {
@@ -137,17 +137,17 @@ export async function handleStart(
     text.split(/\s+/);
 
 
-  const startParameter =
+  const token =
     parts.length > 1
       ? parts[1]
       : null;
 
 
   // ====================================================
-  // START TANPA TOKEN
+  // /START BIASA
   // ====================================================
 
-  if (!startParameter) {
+  if (!token) {
 
     await sendMessage(
       env,
@@ -169,7 +169,7 @@ export async function handleStart(
   const file =
     await getFileByToken(
       env,
-      startParameter
+      token
     );
 
 
@@ -179,8 +179,7 @@ export async function handleStart(
       env,
       chatId,
 
-      "❌ Link file tidak ditemukan.\n\n" +
-      "Kemungkinan link salah atau file sudah dihapus."
+      "❌ Link file tidak ditemukan."
     );
 
     return;
@@ -215,39 +214,28 @@ export async function handleStart(
 
   if (file.expires_at) {
 
-    const expiresAt =
+    const expires =
       new Date(
         file.expires_at
       ).getTime();
 
 
     if (
-      Number.isFinite(expiresAt) &&
-      expiresAt <= Date.now()
+      Number.isFinite(expires) &&
+      expires <= Date.now()
     ) {
 
-      try {
-
-        await update(
-          env,
-          "files",
-          `token=eq.${encodeURIComponent(
-            startParameter
-          )}`,
-          {
-            status:
-              "expired"
-          }
-        );
-
-      } catch (error) {
-
-        console.error(
-          "UPDATE EXPIRED FILE ERROR:",
-          error
-        );
-
-      }
+      await update(
+        env,
+        "files",
+        `token=eq.${encodeURIComponent(
+          token
+        )}`,
+        {
+          status:
+            "expired"
+        }
+      );
 
 
       await sendMessage(
@@ -277,26 +265,18 @@ export async function handleStart(
     );
 
 
-    // ==================================================
-    // UPDATE ACCESS
-    // ==================================================
-
-    const currentCount =
-      Number(
-        file.access_count || 0
-      );
-
-
     await update(
       env,
       "files",
       `token=eq.${encodeURIComponent(
-        startParameter
+        token
       )}`,
       {
 
         access_count:
-          currentCount + 1,
+          Number(
+            file.access_count || 0
+          ) + 1,
 
         last_access_at:
           new Date().toISOString()
@@ -317,8 +297,7 @@ export async function handleStart(
       env,
       chatId,
 
-      "❌ Gagal mengirim file.\n\n" +
-      "Silakan coba lagi."
+      "❌ Gagal mengirim file."
     );
 
   }
@@ -416,7 +395,10 @@ export async function handleMedia(
         false,
 
       duration_seconds:
-        null
+        null,
+
+      step:
+        "protect"
 
     },
     false
@@ -424,7 +406,7 @@ export async function handleMedia(
 
 
   // ====================================================
-  // PILIH PROTECT / PUBLIC
+  // PILIH PROTECT
   // ====================================================
 
   await sendMessage(
@@ -501,7 +483,10 @@ export async function setProtect(
     {
 
       protect_content:
-        Boolean(value)
+        Boolean(value),
+
+      step:
+        "caption"
 
     }
   );
@@ -529,7 +514,7 @@ export async function askCaption(
     env,
     chatId,
 
-    "📝 Kirim caption.\n\n" +
+    "📝 Kirim caption yang ingin digunakan.\n\n" +
     "Atau pilih tanpa caption.",
 
     {
@@ -591,7 +576,10 @@ export async function setCaption(
     {
 
       caption_user:
-        caption || null
+        caption || null,
+
+      step:
+        "duration"
 
     }
   );
@@ -720,7 +708,10 @@ export async function setDuration(
     {
 
       duration_seconds:
-        seconds
+        seconds,
+
+      step:
+        "finished"
 
     }
   );
@@ -873,10 +864,6 @@ export async function finishFile(
   }
 
 
-  // ====================================================
-  // CEK DURASI
-  // ====================================================
-
   if (
     session.duration_seconds ===
       undefined ||
@@ -891,20 +878,12 @@ export async function finishFile(
   }
 
 
-  // ====================================================
-  // BUAT FILE
-  // ====================================================
-
   const file =
     await createFileFromSession(
       env,
       session
     );
 
-
-  // ====================================================
-  // BOT USERNAME
-  // ====================================================
 
   const botUsername =
     String(
@@ -925,10 +904,6 @@ export async function finishFile(
   }
 
 
-  // ====================================================
-  // LINK
-  // ====================================================
-
   const link =
     `https://t.me/${botUsername}?start=${encodeURIComponent(
       file.token
@@ -936,8 +911,17 @@ export async function finishFile(
 
 
   // ====================================================
-  // FORMAT WAKTU BERAKHIR
-  // WIB = UTC+7
+  // FORMAT DURASI
+  // ====================================================
+
+  const durationText =
+    formatDuration(
+      file.duration_seconds
+    );
+
+
+  // ====================================================
+  // FORMAT WAKTU BERAKHIR WIB
   // ====================================================
 
   let expiresText =
@@ -946,7 +930,7 @@ export async function finishFile(
 
   if (file.expires_at) {
 
-    const expiresDate =
+    const date =
       new Date(
         file.expires_at
       );
@@ -954,14 +938,15 @@ export async function finishFile(
 
     if (
       !Number.isNaN(
-        expiresDate.getTime()
+        date.getTime()
       )
     ) {
 
-      const waktu =
-        expiresDate.toLocaleString(
+      expiresText =
+        date.toLocaleString(
           "id-ID",
           {
+
             timeZone:
               "Asia/Jakarta",
 
@@ -985,12 +970,10 @@ export async function finishFile(
 
             hour12:
               false
+
           }
-        );
-
-
-      expiresText =
-        `${waktu} WIB`;
+        ) +
+        " WIB";
 
     }
 
@@ -1009,11 +992,7 @@ export async function finishFile(
 
     `🔗 ${link}\n` +
 
-    `⏳ Durasi: ${
-      formatDuration(
-        file.duration_seconds
-      )
-    }\n` +
+    `⏳ Durasi: ${durationText}\n` +
 
     `berakhir: ${expiresText}`
   );
@@ -1033,11 +1012,8 @@ export async function finishFile(
 
 
   return {
-
     file,
-
     link
-
   };
 
 }
@@ -1066,16 +1042,13 @@ export async function handleDurationText(
       message.chat.id,
 
       "❌ Format durasi tidak valid.\n\n" +
-
       "Contoh:\n" +
+      "30min\n" +
+      "2h\n" +
       "1d\n" +
       "7d\n" +
-      "30d\n" +
-      "2h\n" +
       "2w\n" +
-      "1m\n" +
-      "30min\n" +
-      "forever"
+      "1m"
     );
 
     return;
@@ -1131,51 +1104,76 @@ export async function handleText(
     );
 
 
-  // ====================================================
-  // CUSTOM DURATION
-  // ====================================================
+  if (!session) {
 
-  if (
-    session &&
-    session.duration_seconds === null
-  ) {
+    await sendMessage(
+      env,
+      chatId,
 
-    const duration =
-      parseDuration(
-        text
-      );
+      "📁 Kirim file terlebih dahulu."
+    );
 
-
-    if (duration) {
-
-      await setDuration(
-        env,
-        session.session_id,
-        duration.seconds
-      );
-
-
-      await finishFile(
-        env,
-        session.session_id
-      );
-
-      return;
-
-    }
+    return;
 
   }
 
 
   // ====================================================
-  // TEXT BIASA
+  // STEP CAPTION
+  // ====================================================
+
+  if (
+    session.step ===
+    "caption"
+  ) {
+
+    await setCaption(
+      env,
+      session.session_id,
+      text
+    );
+
+
+    await askDuration(
+      env,
+      chatId,
+      session.session_id
+    );
+
+    return;
+
+  }
+
+
+  // ====================================================
+  // STEP CUSTOM DURATION
+  // ====================================================
+
+  if (
+    session.step ===
+    "custom_duration"
+  ) {
+
+    await handleDurationText(
+      message,
+      env,
+      session.session_id
+    );
+
+    return;
+
+  }
+
+
+  // ====================================================
+  // JIKA BELUM ADA STEP
   // ====================================================
 
   await sendMessage(
     env,
     chatId,
 
-    "📁 Kirim file yang ingin dibuatkan link."
+    "❌ Silakan ikuti tombol yang tersedia."
   );
 
 }
@@ -1363,4 +1361,4 @@ export async function sendFile(
 
   }
 
-    }
+      }
