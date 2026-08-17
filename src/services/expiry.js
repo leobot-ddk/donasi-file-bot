@@ -3,7 +3,6 @@
 // ======================================================
 
 import {
-  selectOne,
   update
 } from "../database/supabase.js";
 
@@ -18,8 +17,11 @@ import {
 //
 // Tugas:
 // 1. Cari file yang sudah expired
-// 2. Hapus file yang pernah dikirim bot
+// 2. Hapus pesan file yang dikirim bot
 // 3. Tandai file sebagai expired
+// 4. Simpan deleted_at jika Telegram berhasil menghapus
+//
+// File yang gagal dihapus akan dicoba lagi pada cron berikutnya.
 //
 // ======================================================
 
@@ -30,20 +32,38 @@ export async function expireFiles(
   try {
 
     // ==================================================
-    // CARI FILE EXPIRED
+    // WAKTU SEKARANG
     // ==================================================
 
     const now =
       new Date().toISOString();
 
 
+    // ==================================================
+    // CARI FILE YANG SUDAH EXPIRED
+    // ==================================================
+    //
+    // Ada 2 kondisi:
+    //
+    // 1. status = active dan expires_at sudah lewat
+    //
+    // 2. status = expired tetapi deleted_at masih null
+    //
+    // Kondisi nomor 2 penting agar file yang gagal dihapus
+    // pada cron sebelumnya bisa dicoba kembali.
+    //
+    // ==================================================
+
+    const filter =
+      `expires_at=not.is.null` +
+      `&expires_at=lte.${encodeURIComponent(now)}` +
+      `&or=(status.eq.active,and(status.eq.expired,deleted_at.is.null))` +
+      `&select=*`;
+
+
     const response =
       await fetch(
-        `${env.SUPABASE_URL}/rest/v1/files` +
-        `?expires_at=not.is.null` +
-        `&expires_at=lte.${encodeURIComponent(now)}` +
-        `&status=eq.active` +
-        `&select=*`,
+        `${env.SUPABASE_URL}/rest/v1/files?${filter}`,
         {
 
           method:
@@ -63,6 +83,10 @@ export async function expireFiles(
       );
 
 
+    // ==================================================
+    // CEK RESPONSE SUPABASE
+    // ==================================================
+
     if (!response.ok) {
 
       const text =
@@ -79,10 +103,19 @@ export async function expireFiles(
       await response.json();
 
 
+    // ==================================================
+    // TIDAK ADA FILE
+    // ==================================================
+
     if (
       !Array.isArray(files) ||
       files.length === 0
     ) {
+
+      console.log(
+        "EXPIRE FILES: tidak ada file yang perlu diproses."
+      );
+
 
       return {
 
@@ -90,6 +123,9 @@ export async function expireFiles(
           0,
 
         deleted:
+          0,
+
+        failed:
           0
 
       };
@@ -103,35 +139,88 @@ export async function expireFiles(
     let deletedCount =
       0;
 
+    let failedCount =
+      0;
+
 
     // ==================================================
-    // PROSES FILE
+    // PROSES SATU PER SATU
     // ==================================================
 
     for (
       const file of files
     ) {
 
+      console.log(
+        "EXPIRE FILE PROCESS:",
+        {
+          id:
+            file.id,
+
+          status:
+            file.status,
+
+          expires_at:
+            file.expires_at,
+
+          sent_chat_id:
+            file.sent_chat_id,
+
+          sent_message_id:
+            file.sent_message_id,
+
+          deleted_at:
+            file.deleted_at
+        }
+      );
+
+
       // ================================================
-      // HAPUS PESAN FILE YANG DIKIRIM BOT
+      // TANDAI EXPIRED TERLEBIH DAHULU
       // ================================================
 
       if (
-        file.sent_chat_id &&
-        file.sent_message_id
+        file.status !== "expired"
       ) {
 
-        const deleted =
-          await deleteBotFile(
+        try {
+
+          await update(
             env,
-            file.sent_chat_id,
-            file.sent_message_id
+            "files",
+            `id=eq.${encodeURIComponent(
+              file.id
+            )}`,
+            {
+
+              status:
+                "expired"
+
+            }
           );
 
 
-        if (deleted) {
+          expiredCount++;
 
-          deletedCount++;
+        } catch (error) {
+
+          console.error(
+            "UPDATE EXPIRED ERROR:",
+            {
+              fileId:
+                file.id,
+
+              error
+            }
+          );
+
+
+          // Jangan lanjut menghapus jika status gagal
+          // diperbarui.
+
+          failedCount++;
+
+          continue;
 
         }
 
@@ -139,40 +228,202 @@ export async function expireFiles(
 
 
       // ================================================
-      // TANDAI EXPIRED
+      // JIKA SUDAH TERHAPUS
       // ================================================
 
-      await update(
-        env,
-        "files",
-        `id=eq.${encodeURIComponent(
-          file.id
-        )}`,
-        {
+      if (
+        file.deleted_at
+      ) {
 
-          status:
-            "expired",
+        continue;
 
-          deleted_at:
-            new Date().toISOString()
+      }
+
+
+      // ================================================
+      // TIDAK ADA DATA PESAN BOT
+      // ================================================
+      //
+      // Kalau file belum pernah dikirim melalui link,
+      // memang tidak ada message_id yang bisa dihapus.
+      //
+      // Tetap dianggap expired.
+      //
+      // ================================================
+
+      if (
+        !file.sent_chat_id ||
+        !file.sent_message_id
+      ) {
+
+        console.log(
+          "EXPIRE FILE: tidak ada pesan bot yang perlu dihapus.",
+          {
+            fileId:
+              file.id
+          }
+        );
+
+
+        continue;
+
+      }
+
+
+      // ================================================
+      // HAPUS PESAN FILE DARI TELEGRAM
+      // ================================================
+
+      let deleted =
+        false;
+
+
+      try {
+
+        deleted =
+          await deleteBotFile(
+            env,
+            file.sent_chat_id,
+            file.sent_message_id
+          );
+
+      } catch (error) {
+
+        console.error(
+          "DELETE TELEGRAM FILE ERROR:",
+          {
+            fileId:
+              file.id,
+
+            chatId:
+              file.sent_chat_id,
+
+            messageId:
+              file.sent_message_id,
+
+            error
+          }
+        );
+
+        deleted =
+          false;
+
+      }
+
+
+      // ================================================
+      // JIKA BERHASIL DIHAPUS
+      // ================================================
+
+      if (deleted) {
+
+        deletedCount++;
+
+
+        try {
+
+          await update(
+            env,
+            "files",
+            `id=eq.${encodeURIComponent(
+              file.id
+            )}`,
+            {
+
+              status:
+                "expired",
+
+              deleted_at:
+                new Date().toISOString()
+
+            }
+          );
+
+
+          console.log(
+            "FILE BERHASIL DIHAPUS:",
+            {
+              fileId:
+                file.id,
+
+              chatId:
+                file.sent_chat_id,
+
+              messageId:
+                file.sent_message_id
+            }
+          );
+
+        } catch (error) {
+
+          console.error(
+            "UPDATE DELETED_AT ERROR:",
+            {
+              fileId:
+                file.id,
+
+              error
+            }
+          );
+
+
+          failedCount++;
 
         }
+
+
+        continue;
+
+      }
+
+
+      // ================================================
+      // JIKA GAGAL DIHAPUS
+      // ================================================
+      //
+      // Jangan isi deleted_at.
+      //
+      // Dengan begitu cron berikutnya akan mencoba
+      // menghapus pesan ini lagi.
+      //
+      // ================================================
+
+      failedCount++;
+
+
+      console.error(
+        "FILE BELUM TERHAPUS - AKAN DICOBA LAGI:",
+        {
+          fileId:
+            file.id,
+
+          chatId:
+            file.sent_chat_id,
+
+          messageId:
+            file.sent_message_id
+        }
       );
-
-
-      expiredCount++;
 
     }
 
 
+    // ==================================================
+    // LOG HASIL
+    // ==================================================
+
     console.log(
-      "EXPIRE FILES:",
+      "EXPIRE FILES RESULT:",
       {
+
         expired:
           expiredCount,
 
         deleted:
-          deletedCount
+          deletedCount,
+
+        failed:
+          failedCount
 
       }
     );
@@ -184,7 +435,10 @@ export async function expireFiles(
         expiredCount,
 
       deleted:
-        deletedCount
+        deletedCount,
+
+      failed:
+        failedCount
 
     };
 
@@ -194,6 +448,7 @@ export async function expireFiles(
       "EXPIRE FILES ERROR:",
       error
     );
+
 
     throw error;
 
