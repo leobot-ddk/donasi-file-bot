@@ -28,45 +28,44 @@ export async function expireFiles(
   env
 ) {
 
-  console.log(
-    "========== EXPIRY START =========="
-  );
-
   try {
 
     // ==================================================
     // CEK ENV
     // ==================================================
 
-    console.log(
-      "SUPABASE_URL:",
-      env.SUPABASE_URL
-        ? "ADA"
-        : "TIDAK ADA"
-    );
-
-    console.log(
-      "SUPABASE_ANON_KEY:",
-      env.SUPABASE_ANON_KEY
-        ? "ADA"
-        : "TIDAK ADA"
-    );
-
-
     if (!env.SUPABASE_URL) {
 
-      throw new Error(
-        "SUPABASE_URL tidak tersedia."
-      );
+      return {
+
+        ok:
+          false,
+
+        stage:
+          "env",
+
+        error:
+          "SUPABASE_URL tidak tersedia."
+
+      };
 
     }
 
 
     if (!env.SUPABASE_ANON_KEY) {
 
-      throw new Error(
-        "SUPABASE_ANON_KEY tidak tersedia."
-      );
+      return {
+
+        ok:
+          false,
+
+        stage:
+          "env",
+
+        error:
+          "SUPABASE_ANON_KEY tidak tersedia."
+
+      };
 
     }
 
@@ -79,12 +78,6 @@ export async function expireFiles(
       new Date().toISOString();
 
 
-    console.log(
-      "EXPIRY NOW:",
-      now
-    );
-
-
     // ==================================================
     // QUERY FILE EXPIRED
     // ==================================================
@@ -95,11 +88,6 @@ export async function expireFiles(
       `&expires_at=lte.${encodeURIComponent(now)}` +
       `&status=eq.active` +
       `&select=*`;
-
-
-    console.log(
-      "EXPIRY QUERY START"
-    );
 
 
     const response =
@@ -127,32 +115,38 @@ export async function expireFiles(
       );
 
 
-    console.log(
-      "EXPIRY QUERY STATUS:",
-      response.status
-    );
-
-
     const responseText =
       await response.text();
 
 
-    console.log(
-      "EXPIRY QUERY RESPONSE:",
-      responseText
-    );
-
+    // ==================================================
+    // SUPABASE ERROR
+    // ==================================================
 
     if (!response.ok) {
 
-      throw new Error(
-        `Supabase expire query error ` +
-        `HTTP ${response.status}: ` +
-        responseText
-      );
+      return {
+
+        ok:
+          false,
+
+        stage:
+          "supabase_query",
+
+        status:
+          response.status,
+
+        error:
+          responseText
+
+      };
 
     }
 
+
+    // ==================================================
+    // PARSE RESPONSE
+    // ==================================================
 
     let files;
 
@@ -163,44 +157,70 @@ export async function expireFiles(
           responseText
         );
 
-    } catch (error) {
+    } catch (
+      error
+    ) {
 
-      throw new Error(
-        "Response Supabase bukan JSON: " +
-        responseText
-      );
+      return {
+
+        ok:
+          false,
+
+        stage:
+          "json",
+
+        error:
+          responseText
+
+      };
 
     }
 
 
-    console.log(
-      "EXPIRY FILE COUNT:",
-      Array.isArray(files)
-        ? files.length
-        : "BUKAN ARRAY"
-    );
+    if (
+      !Array.isArray(files)
+    ) {
 
+      return {
+
+        ok:
+          false,
+
+        stage:
+          "files",
+
+        error:
+          "Response files bukan array.",
+
+        response:
+          responseText
+
+      };
+
+    }
+
+
+    // ==================================================
+    // TIDAK ADA FILE EXPIRED
+    // ==================================================
 
     if (
-      !Array.isArray(files) ||
       files.length === 0
     ) {
 
-      console.log(
-        "TIDAK ADA FILE EXPIRED."
-      );
-
-      console.log(
-        "========== EXPIRY END =========="
-      );
-
       return {
+
+        ok:
+          true,
 
         expired:
           0,
 
         deleted:
-          0
+          0,
+
+        message:
+          "Tidak ada file expired."
 
       };
 
@@ -213,6 +233,8 @@ export async function expireFiles(
     let deletedCount =
       0;
 
+    const results = [];
+
 
     // ==================================================
     // PROSES FILE
@@ -222,38 +244,15 @@ export async function expireFiles(
       const file of files
     ) {
 
-      console.log(
-        "--------------------------------"
-      );
+      let telegramDeleted =
+        false;
 
-      console.log(
-        "MEMPROSES FILE ID:",
-        file.id
-      );
-
-      console.log(
-        "TOKEN:",
-        file.token
-      );
-
-      console.log(
-        "EXPIRES AT:",
-        file.expires_at
-      );
-
-      console.log(
-        "SENT CHAT ID:",
-        file.sent_chat_id
-      );
-
-      console.log(
-        "SENT MESSAGE ID:",
-        file.sent_message_id
-      );
+      let telegramError =
+        null;
 
 
       // ================================================
-      // HAPUS PESAN FILE YANG DIKIRIM BOT
+      // HAPUS PESAN FILE BOT
       // ================================================
 
       if (
@@ -261,36 +260,33 @@ export async function expireFiles(
         file.sent_message_id
       ) {
 
-        console.log(
-          "MENCOBA HAPUS PESAN TELEGRAM..."
-        );
+        try {
+
+          telegramDeleted =
+            await deleteBotFile(
+              env,
+              file.sent_chat_id,
+              file.sent_message_id
+            );
+
+        } catch (
+          error
+        ) {
+
+          telegramError =
+            error?.message ||
+            String(error);
+
+        }
 
 
-        const deleted =
-          await deleteBotFile(
-            env,
-            file.sent_chat_id,
-            file.sent_message_id
-          );
-
-
-        console.log(
-          "HASIL DELETE TELEGRAM:",
-          deleted
-        );
-
-
-        if (deleted) {
+        if (
+          telegramDeleted
+        ) {
 
           deletedCount++;
 
         }
-
-      } else {
-
-        console.log(
-          "TIDAK ADA sent_chat_id / sent_message_id."
-        );
 
       }
 
@@ -299,12 +295,8 @@ export async function expireFiles(
       // TANDAI EXPIRED
       // ================================================
 
-      console.log(
-        "MENANDAI FILE EXPIRED..."
-      );
+      try {
 
-
-      const updateResult =
         await update(
           env,
           "files",
@@ -323,19 +315,68 @@ export async function expireFiles(
         );
 
 
-      console.log(
-        "HASIL UPDATE EXPIRED:",
-        updateResult
-      );
+        expiredCount++;
 
 
-      expiredCount++;
+        results.push({
 
+          id:
+            file.id,
 
-      console.log(
-        "FILE BERHASIL DIPROSES:",
-        file.id
-      );
+          token:
+            file.token,
+
+          sent_chat_id:
+            file.sent_chat_id,
+
+          sent_message_id:
+            file.sent_message_id,
+
+          telegram_deleted:
+            telegramDeleted,
+
+          telegram_error:
+            telegramError,
+
+          status:
+            "expired"
+
+        });
+
+      } catch (
+        error
+      ) {
+
+        results.push({
+
+          id:
+            file.id,
+
+          token:
+            file.token,
+
+          sent_chat_id:
+            file.sent_chat_id,
+
+          sent_message_id:
+            file.sent_message_id,
+
+          telegram_deleted:
+            telegramDeleted,
+
+          telegram_error:
+            telegramError,
+
+          status:
+            "update_failed",
+
+          update_error:
+            error?.message ||
+            String(error)
+
+        });
+
+      }
 
     }
 
@@ -344,81 +385,54 @@ export async function expireFiles(
     // HASIL
     // ==================================================
 
-    console.log(
-      "================================"
-    );
-
-    console.log(
-      "EXPIRE FILES SELESAI:",
-      {
-        expired:
-          expiredCount,
-
-        deleted:
-          deletedCount
-      }
-    );
-
-    console.log(
-      "========== EXPIRY END =========="
-    );
-
-
     return {
+
+      ok:
+        true,
 
       expired:
         expiredCount,
 
       deleted:
-        deletedCount
+        deletedCount,
+
+      checked:
+        files.length,
+
+      results
 
     };
 
-  } catch (error) {
+  } catch (
+    error
+  ) {
 
     // ==================================================
-    // ERROR DETAIL LENGKAP
+    // ERROR
     // ==================================================
 
-    console.error(
-      "========== EXPIRY ERROR =========="
-    );
+    return {
 
-    console.error(
-      "ERROR TYPE:",
-      typeof error
-    );
+      ok:
+        false,
 
-    console.error(
-      "ERROR NAME:",
-      error?.name
-    );
+      stage:
+        "exception",
 
-    console.error(
-      "ERROR MESSAGE:",
-      error?.message
-    );
+      error:
+        error?.message ||
+        String(error),
 
-    console.error(
-      "ERROR STACK:",
-      error?.stack
-    );
+      name:
+        error?.name ||
+        null,
 
-    console.error(
-      "ERROR FULL:",
-      JSON.stringify(
-        error,
-        Object.getOwnPropertyNames(error)
-      )
-    );
+      stack:
+        error?.stack ||
+        null
 
-    console.error(
-      "========== EXPIRY ERROR END =========="
-    );
-
-
-    throw error;
+    };
 
   }
 
-      }
+}
