@@ -226,10 +226,13 @@ export async function deleteMessage(
 // DELETE FILE YANG DIKIRIM BOT
 // ======================================================
 //
-// Digunakan nanti ketika link/file sudah expired.
+// Digunakan ketika link/file sudah expired.
 //
 // chatId    = chat tempat bot mengirim file
 // messageId = message ID file yang dikirim bot
+//
+// Fungsi ini sengaja mencatat error Telegram secara lengkap
+// agar penyebab file tidak terhapus dapat diketahui dari log.
 //
 // ======================================================
 
@@ -244,6 +247,14 @@ export async function deleteBotFile(
     !messageId
   ) {
 
+    console.error(
+      "DELETE BOT FILE: chatId/messageId kosong",
+      {
+        chatId,
+        messageId
+      }
+    );
+
     return false;
 
   }
@@ -251,17 +262,28 @@ export async function deleteBotFile(
 
   try {
 
-    await telegram(
-      env,
-      "deleteMessage",
+    const result =
+      await telegram(
+        env,
+        "deleteMessage",
+        {
+
+          chat_id:
+            chatId,
+
+          message_id:
+            messageId
+
+        }
+      );
+
+
+    console.log(
+      "DELETE BOT FILE BERHASIL:",
       {
-
-        chat_id:
-          chatId,
-
-        message_id:
-          messageId
-
+        chatId,
+        messageId,
+        result
       }
     );
 
@@ -271,8 +293,16 @@ export async function deleteBotFile(
   } catch (error) {
 
     console.error(
-      "DELETE BOT FILE ERROR:",
-      error
+      "DELETE BOT FILE GAGAL:",
+      {
+        chatId,
+        messageId,
+
+        error:
+          error?.message ||
+          String(error)
+
+      }
     );
 
 
