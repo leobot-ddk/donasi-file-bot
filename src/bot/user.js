@@ -4,7 +4,8 @@
 
 import {
   sendMessage,
-  telegram
+  telegram,
+  copyMessage
 } from "../services/telegram.js";
 
 import {
@@ -26,6 +27,11 @@ import {
   parseDuration,
   formatDuration
 } from "../utils/format.js";
+
+import {
+  getAdminGroupId,
+  getAdminChannelId
+} from "../config.js";
 
 
 // ======================================================
@@ -84,30 +90,6 @@ export async function getSession(
 
 
 // ======================================================
-// GET FILE BY TOKEN
-// ======================================================
-
-async function getFileByToken(
-  env,
-  token
-) {
-
-  if (!token) {
-    return null;
-  }
-
-  return selectOne(
-    env,
-    "files",
-    `token=eq.${encodeURIComponent(
-      token
-    )}&limit=1`
-  );
-
-}
-
-
-// ======================================================
 // HANDLE START
 // ======================================================
 
@@ -117,24 +99,21 @@ export async function handleStart(
 ) {
 
   const chatId =
-    message?.chat?.id;
+    message.chat?.id;
 
-  const userId =
-    message?.from?.id;
-
-  if (!chatId || !userId) {
+  if (!chatId) {
     return;
   }
 
 
   const text =
-    typeof message.text === "string"
-      ? message.text.trim()
-      : "";
+    String(
+      message.text || ""
+    );
 
 
   const parts =
-    text.split(/\s+/);
+    text.trim().split(/\s+/);
 
 
   const token =
@@ -144,7 +123,7 @@ export async function handleStart(
 
 
   // ====================================================
-  // /START BIASA
+  // START TANPA TOKEN
   // ====================================================
 
   if (!token) {
@@ -154,7 +133,7 @@ export async function handleStart(
       chatId,
 
       "👋 Selamat datang!\n\n" +
-      "📁 Kirim file ke bot untuk membuat link."
+      "Kirim file ke bot untuk membuat link."
     );
 
     return;
@@ -167,9 +146,12 @@ export async function handleStart(
   // ====================================================
 
   const file =
-    await getFileByToken(
+    await selectOne(
       env,
-      token
+      "files",
+      `token=eq.${encodeURIComponent(
+        token
+      )}&limit=1`
     );
 
 
@@ -179,7 +161,7 @@ export async function handleStart(
       env,
       chatId,
 
-      "❌ Link file tidak ditemukan."
+      "❌ Link tidak ditemukan atau sudah tidak tersedia."
     );
 
     return;
@@ -192,7 +174,6 @@ export async function handleStart(
   // ====================================================
 
   if (
-    file.status &&
     file.status !== "active"
   ) {
 
@@ -200,7 +181,7 @@ export async function handleStart(
       env,
       chatId,
 
-      "❌ File sudah tidak tersedia."
+      "❌ Link ini sudah tidak aktif."
     );
 
     return;
@@ -209,10 +190,12 @@ export async function handleStart(
 
 
   // ====================================================
-  // CEK EXPIRY
+  // CEK EXPIRED
   // ====================================================
 
-  if (file.expires_at) {
+  if (
+    file.expires_at
+  ) {
 
     const expires =
       new Date(
@@ -222,7 +205,7 @@ export async function handleStart(
 
     if (
       Number.isFinite(expires) &&
-      expires <= Date.now()
+      Date.now() >= expires
     ) {
 
       await update(
@@ -242,7 +225,7 @@ export async function handleStart(
         env,
         chatId,
 
-        "⏰ Link file sudah kedaluwarsa."
+        "❌ Link ini sudah kedaluwarsa."
       );
 
       return;
@@ -256,51 +239,39 @@ export async function handleStart(
   // KIRIM FILE
   // ====================================================
 
-  try {
+  await sendFile(
+    env,
+    chatId,
+    file
+  );
 
-    await sendFile(
-      env,
-      chatId,
-      file
+
+  // ====================================================
+  // UPDATE ACCESS
+  // ====================================================
+
+  const currentAccess =
+    Number(
+      file.access_count || 0
     );
 
 
-    await update(
-      env,
-      "files",
-      `token=eq.${encodeURIComponent(
-        token
-      )}`,
-      {
+  await update(
+    env,
+    "files",
+    `token=eq.${encodeURIComponent(
+      token
+    )}`,
+    {
 
-        access_count:
-          Number(
-            file.access_count || 0
-          ) + 1,
+      access_count:
+        currentAccess + 1,
 
-        last_access_at:
-          new Date().toISOString()
+      last_access_at:
+        new Date().toISOString()
 
-      }
-    );
-
-
-  } catch (error) {
-
-    console.error(
-      "SEND FILE ERROR:",
-      error
-    );
-
-
-    await sendMessage(
-      env,
-      chatId,
-
-      "❌ Gagal mengirim file."
-    );
-
-  }
+    }
+  );
 
 }
 
@@ -335,12 +306,10 @@ export async function handleMedia(
     await sendMessage(
       env,
       chatId,
-
       "❌ Jenis file tidak didukung."
     );
 
     return;
-
   }
 
 
@@ -395,10 +364,7 @@ export async function handleMedia(
         false,
 
       duration_seconds:
-        null,
-
-      step:
-        "protect"
+        null
 
     },
     false
@@ -406,7 +372,7 @@ export async function handleMedia(
 
 
   // ====================================================
-  // PILIH PROTECT
+  // PILIH PROTECT / PUBLIC
   // ====================================================
 
   await sendMessage(
@@ -483,10 +449,7 @@ export async function setProtect(
     {
 
       protect_content:
-        Boolean(value),
-
-      step:
-        "caption"
+        Boolean(value)
 
     }
   );
@@ -514,7 +477,7 @@ export async function askCaption(
     env,
     chatId,
 
-    "📝 Kirim caption yang ingin digunakan.\n\n" +
+    "📝 Kirim caption.\n\n" +
     "Atau pilih tanpa caption.",
 
     {
@@ -576,10 +539,7 @@ export async function setCaption(
     {
 
       caption_user:
-        caption || null,
-
-      step:
-        "duration"
+        caption || null
 
     }
   );
@@ -708,10 +668,7 @@ export async function setDuration(
     {
 
       duration_seconds:
-        seconds,
-
-      step:
-        "finished"
+        seconds
 
     }
   );
@@ -720,6 +677,281 @@ export async function setDuration(
   return getSession(
     env,
     sessionId
+  );
+
+}
+
+
+// ======================================================
+// FORMAT FILE SIZE
+// ======================================================
+
+function formatFileSize(
+  size
+) {
+
+  const bytes =
+    Number(size);
+
+
+  if (
+    !Number.isFinite(bytes) ||
+    bytes <= 0
+  ) {
+
+    return "Tidak diketahui";
+
+  }
+
+
+  if (bytes < 1024) {
+
+    return `${bytes} B`;
+
+  }
+
+
+  if (bytes < 1024 * 1024) {
+
+    return (
+      `${(
+        bytes / 1024
+      ).toFixed(2)} KB`
+    );
+
+  }
+
+
+  if (bytes < 1024 * 1024 * 1024) {
+
+    return (
+      `${(
+        bytes /
+        (1024 * 1024)
+      ).toFixed(2)} MB`
+    );
+
+  }
+
+
+  return (
+    `${(
+      bytes /
+      (1024 * 1024 * 1024)
+    ).toFixed(2)} GB`
+  );
+
+}
+
+
+// ======================================================
+// FORMAT EXPIRED WIB
+// ======================================================
+
+function formatExpiredWIB(
+  expiresAt
+) {
+
+  if (!expiresAt) {
+    return "Selamanya";
+  }
+
+
+  const date =
+    new Date(
+      expiresAt
+    );
+
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+
+    return "Tidak diketahui";
+
+  }
+
+
+  const formatter =
+    new Intl.DateTimeFormat(
+      "id-ID",
+      {
+
+        timeZone:
+          "Asia/Jakarta",
+
+        day:
+          "2-digit",
+
+        month:
+          "long",
+
+        year:
+          "numeric",
+
+        hour:
+          "2-digit",
+
+        minute:
+          "2-digit",
+
+        hour12:
+          false
+
+      }
+    );
+
+
+  return (
+    `${formatter.format(
+      date
+    )} WIB`
+  );
+
+}
+
+
+// ======================================================
+// FORMAT DURASI CHANNEL
+// ======================================================
+
+function formatChannelDuration(
+  seconds
+) {
+
+  if (
+    seconds === null ||
+    seconds === undefined
+  ) {
+
+    return "Selamanya";
+
+  }
+
+
+  const value =
+    Number(seconds);
+
+
+  if (
+    !Number.isFinite(value) ||
+    value <= 0
+  ) {
+
+    return "Selamanya";
+
+  }
+
+
+  const day =
+    24 * 60 * 60;
+
+
+  const week =
+    7 * day;
+
+
+  const month =
+    30 * day;
+
+
+  if (
+    value % month === 0
+  ) {
+
+    const months =
+      value / month;
+
+
+    return (
+      months === 1
+        ? "1 bulan"
+        : `${months} bulan`
+    );
+
+  }
+
+
+  if (
+    value % week === 0
+  ) {
+
+    const weeks =
+      value / week;
+
+
+    return (
+      weeks === 1
+        ? "1 minggu"
+        : `${weeks} minggu`
+    );
+
+  }
+
+
+  if (
+    value % day === 0
+  ) {
+
+    const days =
+      value / day;
+
+
+    return (
+      days === 1
+        ? "1 hari"
+        : `${days} hari`
+    );
+
+  }
+
+
+  const hour =
+    60 * 60;
+
+
+  if (
+    value % hour === 0
+  ) {
+
+    const hours =
+      value / hour;
+
+
+    return (
+      hours === 1
+        ? "1 jam"
+        : `${hours} jam`
+    );
+
+  }
+
+
+  const minute =
+    60;
+
+
+  if (
+    value % minute === 0
+  ) {
+
+    const minutes =
+      value / minute;
+
+
+    return (
+      minutes === 1
+        ? "1 menit"
+        : `${minutes} menit`
+    );
+
+  }
+
+
+  return formatDuration(
+    value
   );
 
 }
@@ -764,6 +996,117 @@ export async function createFileFromSession(
 
   }
 
+
+  // ====================================================
+  // GROUP ID
+  // ====================================================
+
+  const groupId =
+    getAdminGroupId(
+      env
+    );
+
+
+  if (!groupId) {
+
+    throw new Error(
+      "ADMIN_GROUP_ID belum diset."
+    );
+
+  }
+
+
+  // ====================================================
+  // CHANNEL ID
+  // ====================================================
+
+  const channelId =
+    getAdminChannelId(
+      env
+    );
+
+
+  if (!channelId) {
+
+    throw new Error(
+      "ADMIN_CHANNEL_ID belum diset."
+    );
+
+  }
+
+
+  // ====================================================
+  // COPY FILE LANGSUNG KE GROUP
+  // ====================================================
+  //
+  // PENTING:
+  // - Tidak protect
+  // - Permanen
+  // - File asli langsung
+  // - Caption user tetap ikut
+  //
+  // ====================================================
+
+  const groupMessage =
+    await copyMessage(
+      env,
+      groupId,
+      session.source_chat_id,
+      session.source_message_id,
+      {
+
+        protect_content:
+          false,
+
+        ...(session.caption_user
+          ? {
+              caption:
+                session.caption_user
+            }
+          : {}),
+
+        reply_markup: {
+
+          inline_keyboard: [
+
+            [
+
+              {
+
+                text:
+                  "👤 User Pengirim",
+
+                url:
+                  `tg://user?id=${session.telegram_id}`
+
+              }
+
+            ]
+
+          ]
+
+        }
+
+      }
+    );
+
+
+  const groupMessageId =
+    groupMessage?.message_id;
+
+
+  if (!groupMessageId) {
+
+    throw new Error(
+      "Salinan file ke grup gagal."
+    );
+
+  }
+
+
+  // ====================================================
+  // INSERT FILE KE SUPABASE
+  // ====================================================
 
   const rows =
     await insert(
@@ -815,6 +1158,12 @@ export async function createFileFromSession(
         status:
           "active",
 
+        group_message_id:
+          groupMessageId,
+
+        channel_message_id:
+          null,
+
         access_count:
           0
 
@@ -828,13 +1177,165 @@ export async function createFileFromSession(
   ) {
 
     throw new Error(
-      "File gagal disimpan."
+      "Data file gagal disimpan ke Supabase."
     );
 
   }
 
 
-  return rows[0];
+  const file =
+    rows[0];
+
+
+  // ====================================================
+  // BOT USERNAME
+  // ====================================================
+
+  const botUsername =
+    String(
+      env.TELEGRAM_BOT_USERNAME ||
+      ""
+    ).replace(
+      /^@/,
+      ""
+    );
+
+
+  if (!botUsername) {
+
+    throw new Error(
+      "TELEGRAM_BOT_USERNAME belum diset."
+    );
+
+  }
+
+
+  // ====================================================
+  // LINK
+  // ====================================================
+
+  const link =
+    `https://t.me/${botUsername}?start=${encodeURIComponent(
+      token
+    )}`;
+
+
+  // ====================================================
+  // AKSES
+  // ====================================================
+
+  const access =
+    session.protect_content
+      ? "PROTECTED"
+      : "PUBLIC";
+
+
+  // ====================================================
+  // DURASI
+  // ====================================================
+
+  const durationText =
+    formatChannelDuration(
+      seconds
+    );
+
+
+  // ====================================================
+  // EXPIRED
+  // ====================================================
+
+  const expiredText =
+    formatExpiredWIB(
+      expiresAt
+    );
+
+
+  // ====================================================
+  // NAMA FILE
+  // ====================================================
+
+  const fileName =
+    session.file_name ||
+    "Tanpa nama";
+
+
+  // ====================================================
+  // PESAN CHANNEL
+  // ====================================================
+
+  const channelText =
+
+    `📄 Nama: ${fileName}\n` +
+
+    `📦 Ukuran: ${formatFileSize(
+      session.file_size
+    )}\n\n` +
+
+    `🔐 Akses: ${access}\n` +
+
+    `⏱️ Durasi: ${durationText}\n\n` +
+
+    `🔗 Link:\n` +
+
+    `${link}\n\n` +
+
+    `📅 Expired: ${expiredText}`;
+
+
+  // ====================================================
+  // KIRIM INFO KE CHANNEL
+  // ====================================================
+
+  const channelMessage =
+    await sendMessage(
+      env,
+      channelId,
+      channelText
+    );
+
+
+  const channelMessageId =
+    channelMessage?.message_id;
+
+
+  if (!channelMessageId) {
+
+    throw new Error(
+      "Pesan informasi ke channel gagal."
+    );
+
+  }
+
+
+  // ====================================================
+  // UPDATE CHANNEL MESSAGE ID
+  // ====================================================
+
+  await update(
+    env,
+    "files",
+    `id=eq.${encodeURIComponent(
+      file.id
+    )}`,
+    {
+
+      channel_message_id:
+        channelMessageId
+
+    }
+  );
+
+
+  return {
+
+    ...file,
+
+    channel_message_id:
+      channelMessageId,
+
+    link
+
+  };
 
 }
 
@@ -864,6 +1365,10 @@ export async function finishFile(
   }
 
 
+  // ====================================================
+  // CEK DURASI
+  // ====================================================
+
   if (
     session.duration_seconds ===
       undefined ||
@@ -878,111 +1383,46 @@ export async function finishFile(
   }
 
 
-  const file =
+  // ====================================================
+  // CREATE FILE
+  // GROUP COPY
+  // CHANNEL INFO
+  // ====================================================
+
+  const result =
     await createFileFromSession(
       env,
       session
     );
 
 
-  const botUsername =
-    String(
-      env.TELEGRAM_BOT_USERNAME ||
-      ""
-    ).replace(
-      /^@/,
-      ""
-    );
-
-
-  if (!botUsername) {
-
-    throw new Error(
-      "TELEGRAM_BOT_USERNAME belum diset."
-    );
-
-  }
+  const file =
+    result;
 
 
   const link =
-    `https://t.me/${botUsername}?start=${encodeURIComponent(
-      file.token
-    )}`;
+    result.link;
 
 
   // ====================================================
-  // FORMAT DURASI
-  // ====================================================
-
-  const durationText =
-    formatDuration(
-      file.duration_seconds
-    );
-
-
-  // ====================================================
-  // FORMAT WAKTU BERAKHIR WIB
+  // KIRIM LINK KE USER
   // ====================================================
 
   let expiresText =
     "Selamanya";
 
 
-  if (file.expires_at) {
+  if (
+    file.expires_at
+  ) {
 
-    const date =
-      new Date(
+    expiresText =
+      formatExpiredWIB(
         file.expires_at
       );
 
-
-    if (
-      !Number.isNaN(
-        date.getTime()
-      )
-    ) {
-
-      expiresText =
-        date.toLocaleString(
-          "id-ID",
-          {
-
-            timeZone:
-              "Asia/Jakarta",
-
-            day:
-              "2-digit",
-
-            month:
-              "2-digit",
-
-            year:
-              "numeric",
-
-            hour:
-              "2-digit",
-
-            minute:
-              "2-digit",
-
-            second:
-              "2-digit",
-
-            hour12:
-              false
-
-          }
-        ) +
-        " WIB";
-
-    }
-
   }
 
-
-  // ====================================================
-  // KIRIM LINK
-  // ====================================================
 
   await sendMessage(
     env,
@@ -992,7 +1432,9 @@ export async function finishFile(
 
     `🔗 ${link}\n` +
 
-    `⏳ Durasi: ${durationText}\n` +
+    `⏳ Durasi: ${formatChannelDuration(
+      file.duration_seconds
+    )}\n` +
 
     `berakhir: ${expiresText}`
   );
@@ -1012,8 +1454,11 @@ export async function finishFile(
 
 
   return {
+
     file,
+
     link
+
   };
 
 }
@@ -1042,13 +1487,16 @@ export async function handleDurationText(
       message.chat.id,
 
       "❌ Format durasi tidak valid.\n\n" +
+
       "Contoh:\n" +
-      "30min\n" +
-      "2h\n" +
       "1d\n" +
       "7d\n" +
+      "30d\n" +
+      "2h\n" +
       "2w\n" +
-      "1m"
+      "1m\n" +
+      "30min\n" +
+      "forever"
     );
 
     return;
@@ -1081,15 +1529,15 @@ export async function handleText(
 ) {
 
   const userId =
-    message?.from?.id;
+    message.from?.id;
 
   const chatId =
-    message?.chat?.id;
+    message.chat?.id;
 
   const text =
-    typeof message?.text === "string"
-      ? message.text.trim()
-      : "";
+    String(
+      message.text || ""
+    ).trim();
 
 
   if (!userId || !chatId || !text) {
@@ -1110,7 +1558,7 @@ export async function handleText(
       env,
       chatId,
 
-      "📁 Kirim file terlebih dahulu."
+      "📁 Silakan kirim file terlebih dahulu."
     );
 
     return;
@@ -1119,12 +1567,33 @@ export async function handleText(
 
 
   // ====================================================
-  // STEP CAPTION
+  // CUSTOM DURATION
   // ====================================================
 
   if (
-    session.step ===
-    "caption"
+    session.duration_seconds === null &&
+    session.caption_user !== null &&
+    session.caption_user !== undefined
+  ) {
+
+    await handleDurationText(
+      message,
+      env,
+      session.session_id
+    );
+
+    return;
+
+  }
+
+
+  // ====================================================
+  // INPUT CAPTION
+  // ====================================================
+
+  if (
+    session.caption_user === null ||
+    session.caption_user === undefined
   ) {
 
     await setCaption(
@@ -1146,41 +1615,20 @@ export async function handleText(
 
 
   // ====================================================
-  // STEP CUSTOM DURATION
+  // FALLBACK CUSTOM DURATION
   // ====================================================
 
-  if (
-    session.step ===
-    "custom_duration"
-  ) {
-
-    await handleDurationText(
-      message,
-      env,
-      session.session_id
-    );
-
-    return;
-
-  }
-
-
-  // ====================================================
-  // JIKA BELUM ADA STEP
-  // ====================================================
-
-  await sendMessage(
+  await handleDurationText(
+    message,
     env,
-    chatId,
-
-    "❌ Silakan ikuti tombol yang tersedia."
+    session.session_id
   );
 
 }
 
 
 // ======================================================
-// SEND FILE
+// SEND FILE DARI LINK
 // ======================================================
 
 export async function sendFile(
@@ -1361,4 +1809,4 @@ export async function sendFile(
 
   }
 
-      }
+}
