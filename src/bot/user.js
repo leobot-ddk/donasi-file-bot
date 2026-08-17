@@ -1531,7 +1531,7 @@ export async function handleDurationText(
 
       "❌ Format durasi tidak valid.\n\n" +
       "Contoh:\n" +
-      "30min\n" +
+      "1h\n" +
       "2h\n" +
       "1d\n" +
       "7d\n" +
