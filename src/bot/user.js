@@ -30,11 +30,10 @@ import {
 // USER STATE
 // ======================================================
 //
-// State disimpan di memory Worker.
-// Digunakan hanya untuk proses:
-// file -> protect -> caption -> duration
+// Tidak menggunakan pending_uploads.
 //
-// Data file final tetap disimpan di Supabase.
+// User bisa mengirim file berkali-kali.
+// Setiap user mempunyai state proses sendiri.
 //
 // ======================================================
 
@@ -42,7 +41,7 @@ const states = new Map();
 
 
 // ======================================================
-// HANDLE /START
+// START
 // ======================================================
 
 export async function handleStart(
@@ -57,12 +56,13 @@ export async function handleStart(
       .trim()
       .split(/\s+/);
 
+
   const token =
     parts[1];
 
 
   // ====================================================
-  // /start tanpa token
+  // START BIASA
   // ====================================================
 
   if (!token) {
@@ -81,7 +81,7 @@ export async function handleStart(
 
 
   // ====================================================
-  // /start TOKEN
+  // START DENGAN TOKEN
   // ====================================================
 
   const file =
@@ -97,6 +97,7 @@ export async function handleStart(
     await sendMessage(
       env,
       message.chat.id,
+
       "❌ Link file tidak ditemukan."
     );
 
@@ -106,7 +107,7 @@ export async function handleStart(
 
 
   // ====================================================
-  // CEK STATUS
+  // STATUS
   // ====================================================
 
   if (
@@ -116,6 +117,7 @@ export async function handleStart(
     await sendMessage(
       env,
       message.chat.id,
+
       "❌ Link file sudah tidak aktif."
     );
 
@@ -125,7 +127,7 @@ export async function handleStart(
 
 
   // ====================================================
-  // CEK EXPIRY
+  // EXPIRY
   // ====================================================
 
   if (
@@ -138,6 +140,7 @@ export async function handleStart(
     await sendMessage(
       env,
       message.chat.id,
+
       "❌ Link file sudah kedaluwarsa."
     );
 
@@ -159,7 +162,7 @@ export async function handleStart(
 
 
   // ====================================================
-  // CATAT ACCESS
+  // CATAT DELIVERY
   // ====================================================
 
   try {
@@ -168,6 +171,7 @@ export async function handleStart(
       env,
       "deliveries",
       {
+
         file_id:
           file.id,
 
@@ -176,6 +180,7 @@ export async function handleStart(
 
         telegram_message_id:
           sent.message_id
+
       },
       false
     );
@@ -230,7 +235,7 @@ export async function handleMedia(
 
 
   // ====================================================
-  // SIMPAN STATE PER USER
+  // SIMPAN STATE
   // ====================================================
 
   states.set(
@@ -262,7 +267,8 @@ export async function handleMedia(
         media.fileSize,
 
       caption_user:
-        message.caption || null,
+        message.caption ||
+        null,
 
       protect_content:
         false,
@@ -283,7 +289,7 @@ export async function handleMedia(
     chatId,
 
     "📁 File diterima.\n\n" +
-    "Pilih jenis link:",
+    "Pilih:",
 
     {
 
@@ -347,16 +353,14 @@ export async function handleText(
   }
 
 
-  const key =
-    String(userId);
-
-
   const state =
-    states.get(key);
+    getUserState(
+      userId
+    );
 
 
   // ====================================================
-  // TIDAK ADA PROSES
+  // TIDAK ADA STATE
   // ====================================================
 
   if (!state) {
@@ -390,6 +394,7 @@ export async function handleText(
       chatId,
 
       "❌ Format durasi tidak valid.\n\n" +
+
       "Contoh:\n" +
       "• forever\n" +
       "• 1h\n" +
@@ -410,7 +415,7 @@ export async function handleText(
 
 
   // ====================================================
-  // BUAT FILE
+  // SELESAIKAN FILE
   // ====================================================
 
   try {
@@ -422,7 +427,11 @@ export async function handleText(
       state
     );
 
-    states.delete(key);
+
+    states.delete(
+      String(userId)
+    );
+
 
   } catch (error) {
 
@@ -454,11 +463,10 @@ export function setProtect(
   value
 ) {
 
-  const key =
-    String(userId);
-
   const state =
-    states.get(key);
+    getUserState(
+      userId
+    );
 
 
   if (!state) {
@@ -478,7 +486,7 @@ export function setProtect(
 
 
 // ======================================================
-// TAMPILKAN PILIHAN CAPTION
+// ASK CAPTION
 // ======================================================
 
 export async function askCaption(
@@ -490,9 +498,8 @@ export async function askCaption(
     env,
     chatId,
 
-    "📝 Caption?\n\n" +
-    "Kirim caption yang ingin ditambahkan.\n" +
-    "Atau tekan tombol di bawah jika tanpa caption.",
+    "📝 Kirim caption.\n\n" +
+    "Atau pilih tanpa caption.",
 
     {
 
@@ -531,11 +538,10 @@ export function setCaption(
   caption
 ) {
 
-  const key =
-    String(userId);
-
   const state =
-    states.get(key);
+    getUserState(
+      userId
+    );
 
 
   if (!state) {
@@ -555,7 +561,7 @@ export function setCaption(
 
 
 // ======================================================
-// TAMPILKAN PILIHAN DURASI
+// ASK DURATION
 // ======================================================
 
 export async function askDuration(
@@ -638,7 +644,7 @@ export async function askDuration(
 
 
 // ======================================================
-// SET DURASI DARI CALLBACK
+// SET DURATION
 // ======================================================
 
 export function setDuration(
@@ -646,11 +652,10 @@ export function setDuration(
   seconds
 ) {
 
-  const key =
-    String(userId);
-
   const state =
-    states.get(key);
+    getUserState(
+      userId
+    );
 
 
   if (!state) {
@@ -663,13 +668,44 @@ export function setDuration(
   state.duration_seconds =
     seconds;
 
+
   return true;
 
 }
 
 
 // ======================================================
-// BUAT FILE FINAL
+// GET USER STATE
+// ======================================================
+
+export function getUserState(
+  userId
+) {
+
+  return states.get(
+    String(userId)
+  ) || null;
+
+}
+
+
+// ======================================================
+// DELETE USER STATE
+// ======================================================
+
+export function clearUserState(
+  userId
+) {
+
+  states.delete(
+    String(userId)
+  );
+
+}
+
+
+// ======================================================
+// CREATE FILE
 // ======================================================
 
 export async function createFileFromState(
@@ -733,16 +769,20 @@ export async function createFileFromState(
           state.telegram_file_id,
 
         file_name:
-          state.file_name || null,
+          state.file_name ||
+          null,
 
         mime_type:
-          state.mime_type || null,
+          state.mime_type ||
+          null,
 
         file_size:
-          state.file_size || null,
+          state.file_size ||
+          null,
 
         caption_user:
-          state.caption_user || null,
+          state.caption_user ||
+          null,
 
         protect_content:
           Boolean(
@@ -850,7 +890,7 @@ export async function finishFile(
 
 
 // ======================================================
-// KIRIM FILE
+// SEND FILE
 // ======================================================
 
 async function sendFile(
@@ -876,6 +916,11 @@ async function sendFile(
     file.media_type
   ) {
 
+
+    // ================================================
+    // PHOTO
+    // ================================================
+
     case "photo":
 
       return telegram(
@@ -895,6 +940,10 @@ async function sendFile(
         }
       );
 
+
+    // ================================================
+    // VIDEO
+    // ================================================
 
     case "video":
 
@@ -916,6 +965,10 @@ async function sendFile(
       );
 
 
+    // ================================================
+    // AUDIO
+    // ================================================
+
     case "audio":
 
       return telegram(
@@ -935,6 +988,10 @@ async function sendFile(
         }
       );
 
+
+    // ================================================
+    // VOICE
+    // ================================================
 
     case "voice":
 
@@ -956,6 +1013,10 @@ async function sendFile(
       );
 
 
+    // ================================================
+    // ANIMATION
+    // ================================================
+
     case "animation":
 
       return telegram(
@@ -976,6 +1037,10 @@ async function sendFile(
       );
 
 
+    // ================================================
+    // VIDEO NOTE
+    // ================================================
+
     case "video_note":
 
       return telegram(
@@ -992,6 +1057,10 @@ async function sendFile(
       );
 
 
+    // ================================================
+    // STICKER
+    // ================================================
+
     case "sticker":
 
       return telegram(
@@ -1007,6 +1076,10 @@ async function sendFile(
         }
       );
 
+
+    // ================================================
+    // DOCUMENT
+    // ================================================
 
     case "document":
 
@@ -1031,4 +1104,4 @@ async function sendFile(
 
   }
 
-          }
+}
