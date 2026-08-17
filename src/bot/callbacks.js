@@ -231,14 +231,6 @@ async function handleAdminCallback(
   // ====================================================
   // FILE LIST
   // ====================================================
-  //
-  // admin:delete
-  // digunakan sebagai menu daftar file.
-  //
-  // Daftar file sekarang hanya menampilkan
-  // file yang masih aktif.
-  //
-  // ====================================================
 
   if (
     data ===
@@ -250,7 +242,7 @@ async function handleAdminCallback(
     await answerCallback(
       env,
       callback.id,
-      "📁 Daftar file aktif"
+      "📁 Daftar file"
     );
 
 
@@ -318,11 +310,13 @@ async function handleAdminCallback(
   // DELETE FILE
   // ====================================================
   //
-  // Menghapus permanen data file dari database.
+  // Menghapus:
+  // - Pesan file yang dikirim bot ke user.
+  // - Data file dari database.
   //
-  // Callback:
-  //
-  // admin:deletefile:ID
+  // Tidak menghapus:
+  // - Salinan file di grup admin.
+  // - File asli di Telegram.
   //
   // ====================================================
 
@@ -354,7 +348,7 @@ async function handleAdminCallback(
     await answerCallback(
       env,
       callback.id,
-      "🗑️ Link dihapus."
+      "🗑️ Menghapus link..."
     );
 
 
