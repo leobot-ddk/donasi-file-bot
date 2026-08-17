@@ -60,50 +60,24 @@ function formatFileSize(bytes) {
     bytes === undefined ||
     !Number.isFinite(Number(bytes))
   ) {
-
     return "-";
-
   }
 
-
-  const size =
-    Number(bytes);
-
+  const size = Number(bytes);
 
   if (size < 1024) {
-
     return `${size} B`;
-
   }
-
 
   if (size < 1024 * 1024) {
-
-    return `${(
-      size / 1024
-    ).toFixed(2)} KB`;
-
+    return `${(size / 1024).toFixed(2)} KB`;
   }
 
-
-  if (
-    size <
-    1024 * 1024 * 1024
-  ) {
-
-    return `${(
-      size /
-      (1024 * 1024)
-    ).toFixed(2)} MB`;
-
+  if (size < 1024 * 1024 * 1024) {
+    return `${(size / (1024 * 1024)).toFixed(2)} MB`;
   }
 
-
-  return `${(
-    size /
-    (1024 * 1024 * 1024)
-  ).toFixed(2)} GB`;
-
+  return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 
@@ -114,83 +88,46 @@ function formatFileSize(bytes) {
 function formatWIB(dateValue) {
 
   if (!dateValue) {
-
     return "Permanen";
-
   }
 
+  const date = new Date(dateValue);
 
-  const date =
-    new Date(dateValue);
-
-
-  if (
-    Number.isNaN(
-      date.getTime()
-    )
-  ) {
-
+  if (Number.isNaN(date.getTime())) {
     return "-";
-
   }
-
 
   const parts =
     new Intl.DateTimeFormat(
       "id-ID",
       {
-
-        timeZone:
-          "Asia/Jakarta",
-
-        day:
-          "numeric",
-
-        month:
-          "long",
-
-        year:
-          "numeric",
-
-        hour:
-          "2-digit",
-
-        minute:
-          "2-digit",
-
-        hour12:
-          false
-
+        timeZone: "Asia/Jakarta",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
       }
     ).formatToParts(date);
 
+  const get = (type) => {
 
-  const get =
-    type => {
+    const item =
+      parts.find(
+        part => part.type === type
+      );
 
-      const part =
-        parts.find(
-          item =>
-            item.type === type
-        );
+    return item
+      ? item.value
+      : "";
 
-
-      return part
-        ? part.value
-        : "";
-
-    };
-
+  };
 
   return (
-    `${get("day")} ` +
-    `${get("month")} ` +
-    `${get("year")} ` +
-    `pukul ` +
-    `${get("hour")}.` +
-    `${get("minute")} WIB`
+    `${get("day")} ${get("month")} ${get("year")} ` +
+    `pukul ${get("hour")}.${get("minute")} WIB`
   );
-
 }
 
 
@@ -237,6 +174,21 @@ export async function getSession(
 // ======================================================
 // COPY ORIGINAL FILE KE ADMIN GROUP
 // ======================================================
+//
+// PENTING:
+//
+// Fungsi ini TIDAK boleh menggagalkan proses user.
+//
+// Jika copy ke grup gagal:
+// - error hanya dicatat di log
+// - user tetap mendapat tombol Protect/Public
+//
+// Salinan:
+// - langsung saat file diterima
+// - tanpa protect content
+// - permanen di grup
+//
+// ======================================================
 
 async function copyOriginalToAdminGroup(
   env,
@@ -246,7 +198,6 @@ async function copyOriginalToAdminGroup(
   const groupId =
     getAdminGroupId(env);
 
-
   if (!groupId) {
 
     console.warn(
@@ -254,51 +205,58 @@ async function copyOriginalToAdminGroup(
     );
 
     return null;
-
   }
-
-
-  const messageId =
-    message.message_id;
 
   const sourceChatId =
-    message.chat?.id;
+    message?.chat?.id;
 
+  const messageId =
+    message?.message_id;
 
   if (
-    !messageId ||
-    !sourceChatId
+    !sourceChatId ||
+    !messageId
   ) {
 
+    console.warn(
+      "SOURCE CHAT ID atau MESSAGE ID tidak ditemukan."
+    );
+
     return null;
-
   }
-
 
   try {
 
-    return await copyMessage(
-      env,
-      groupId,
-      sourceChatId,
-      messageId,
-      {
+    const result =
+      await copyMessage(
+        env,
+        groupId,
+        sourceChatId,
+        messageId,
+        {
+          protect_content:
+            false
+        }
+      );
 
-        protect_content:
-          false
-
-      }
+    console.log(
+      "FILE BERHASIL DISALIN KE ADMIN GROUP:",
+      result
     );
+
+    return result;
 
   } catch (error) {
 
     console.error(
-      "COPY FILE KE ADMIN GROUP ERROR:",
+      "COPY FILE KE ADMIN GROUP GAGAL:",
       error
     );
 
-    return null;
+    // Jangan throw.
+    // User tetap boleh melanjutkan proses.
 
+    return null;
   }
 
 }
@@ -314,26 +272,19 @@ export async function handleStart(
 ) {
 
   const chatId =
-    message.chat?.id;
-
+    message?.chat?.id;
 
   if (!chatId) {
-
     return;
-
   }
-
 
   const text =
     String(
-      message.text ||
-      ""
+      message.text || ""
     ).trim();
-
 
   const parts =
     text.split(/\s+/);
-
 
   const token =
     parts.length > 1
@@ -342,7 +293,7 @@ export async function handleStart(
 
 
   // ====================================================
-  // START TANPA TOKEN
+  // START BIASA
   // ====================================================
 
   if (!token) {
@@ -356,7 +307,6 @@ export async function handleStart(
     );
 
     return;
-
   }
 
 
@@ -383,12 +333,11 @@ export async function handleStart(
     );
 
     return;
-
   }
 
 
   // ====================================================
-  // CEK STATUS
+  // STATUS
   // ====================================================
 
   if (
@@ -402,12 +351,11 @@ export async function handleStart(
     );
 
     return;
-
   }
 
 
   // ====================================================
-  // CEK EXPIRED
+  // EXPIRED
   // ====================================================
 
   if (
@@ -424,13 +372,10 @@ export async function handleStart(
         token
       )}`,
       {
-
         status:
           "expired"
-
       }
     );
-
 
     await sendMessage(
       env,
@@ -439,12 +384,11 @@ export async function handleStart(
     );
 
     return;
-
   }
 
 
   // ====================================================
-  // UPDATE ACCESS
+  // ACCESS COUNT
   // ====================================================
 
   await update(
@@ -489,165 +433,202 @@ export async function handleMedia(
   env
 ) {
 
-  const userId =
-    message.from?.id;
+  try {
 
-  const chatId =
-    message.chat?.id;
+    const userId =
+      message?.from?.id;
 
+    const chatId =
+      message?.chat?.id;
 
-  if (
-    !userId ||
-    !chatId
-  ) {
-
-    return;
-
-  }
+    if (!userId || !chatId) {
+      return;
+    }
 
 
-  const media =
-    getMedia(message);
+    // ==================================================
+    // DETEKSI MEDIA
+    // ==================================================
+
+    const media =
+      getMedia(message);
+
+    if (!media) {
+
+      await sendMessage(
+        env,
+        chatId,
+        "❌ Jenis file tidak didukung."
+      );
+
+      return;
+    }
 
 
-  if (!media) {
+    // ==================================================
+    // SESSION ID
+    // ==================================================
+
+    const sessionId =
+      createSessionId();
+
+
+    // ==================================================
+    // INSERT SESSION
+    // ==================================================
+
+    const sessionRows =
+      await insert(
+        env,
+        "upload_sessions",
+        {
+
+          session_id:
+            sessionId,
+
+          telegram_id:
+            userId,
+
+          source_chat_id:
+            chatId,
+
+          source_message_id:
+            message.message_id,
+
+          media_type:
+            media.type,
+
+          telegram_file_id:
+            media.fileId,
+
+          file_name:
+            media.fileName ||
+            null,
+
+          mime_type:
+            media.mimeType ||
+            null,
+
+          file_size:
+            media.fileSize ||
+            null,
+
+          caption_user:
+            message.caption ||
+            null,
+
+          protect_content:
+            false,
+
+          duration_seconds:
+            null
+
+        },
+        false
+      );
+
+
+    console.log(
+      "UPLOAD SESSION CREATED:",
+      sessionRows
+    );
+
+
+    // ==================================================
+    // COPY FILE KE ADMIN GROUP
+    // ==================================================
+    //
+    // DILAKUKAN SEGERA.
+    //
+    // Tidak menunggu:
+    // - protect
+    // - caption
+    // - durasi
+    // - link
+    //
+    // ==================================================
+
+    await copyOriginalToAdminGroup(
+      env,
+      message
+    );
+
+
+    // ==================================================
+    // PILIH PROTECT / PUBLIC
+    // ==================================================
 
     await sendMessage(
       env,
       chatId,
-      "❌ Jenis file tidak didukung."
-    );
 
-    return;
+      "📁 File diterima.\n\n" +
+      "Pilih:",
 
-  }
+      {
 
+        reply_markup: {
 
-  // ====================================================
-  // SESSION ID
-  // ====================================================
+          inline_keyboard: [
 
-  const sessionId =
-    createSessionId();
+            [
 
+              {
+                text:
+                  "🔒 Protect Content",
 
-  // ====================================================
-  // SIMPAN SESSION
-  // ====================================================
+                callback_data:
+                  `protect:on:${sessionId}`
+              },
 
-  await insert(
-    env,
-    "upload_sessions",
-    {
+              {
+                text:
+                  "🌐 Public",
 
-      session_id:
-        sessionId,
+                callback_data:
+                  `protect:off:${sessionId}`
+              }
 
-      telegram_id:
-        userId,
-
-      source_chat_id:
-        chatId,
-
-      source_message_id:
-        message.message_id,
-
-      media_type:
-        media.type,
-
-      telegram_file_id:
-        media.fileId,
-
-      file_name:
-        media.fileName ||
-        null,
-
-      mime_type:
-        media.mimeType ||
-        null,
-
-      file_size:
-        media.fileSize ||
-        null,
-
-      caption_user:
-        message.caption ||
-        null,
-
-      caption_admin:
-        null,
-
-      protect_content:
-        false,
-
-      duration_seconds:
-        null,
-
-      step:
-        "protect"
-
-    },
-    false
-  );
-
-
-  // ====================================================
-  // COPY FILE LANGSUNG KE ADMIN GROUP
-  // ====================================================
-
-  await copyOriginalToAdminGroup(
-    env,
-    message
-  );
-
-
-  // ====================================================
-  // PILIH PROTECT / PUBLIC
-  // ====================================================
-
-  await sendMessage(
-    env,
-    chatId,
-
-    "📁 File diterima.\n\n" +
-    "Pilih:",
-
-    {
-
-      reply_markup: {
-
-        inline_keyboard: [
-
-          [
-
-            {
-
-              text:
-                "🔒 Protect Content",
-
-              callback_data:
-                `protect:on:${sessionId}`
-
-            },
-
-            {
-
-              text:
-                "🌐 Public",
-
-              callback_data:
-                `protect:off:${sessionId}`
-
-            }
+            ]
 
           ]
 
-        ]
+        }
+
+      }
+    );
+
+  } catch (error) {
+
+    console.error(
+      "HANDLE MEDIA ERROR:",
+      error
+    );
+
+    try {
+
+      if (message?.chat?.id) {
+
+        await sendMessage(
+          env,
+          message.chat.id,
+
+          "❌ File gagal diproses.\n\n" +
+          "Silakan coba kirim ulang file."
+        );
 
       }
 
+    } catch (sendError) {
+
+      console.error(
+        "HANDLE MEDIA ERROR MESSAGE:",
+        sendError
+      );
+
     }
-  );
+
+  }
 
 }
 
@@ -668,13 +649,9 @@ export async function setProtect(
       sessionId
     );
 
-
   if (!session) {
-
     return null;
-
   }
-
 
   await update(
     env,
@@ -689,7 +666,6 @@ export async function setProtect(
 
     }
   );
-
 
   return getSession(
     env,
@@ -725,13 +701,11 @@ export async function askCaption(
           [
 
             {
-
               text:
                 "➡️ Tanpa Caption",
 
               callback_data:
                 `caption:none:${sessionId}`
-
             }
 
           ]
@@ -762,13 +736,9 @@ export async function setCaption(
       sessionId
     );
 
-
   if (!session) {
-
     return null;
-
   }
-
 
   await update(
     env,
@@ -780,11 +750,13 @@ export async function setCaption(
 
       caption_user:
         caption ||
-        null
+        null,
+
+      step:
+        "duration"
 
     }
   );
-
 
   return getSession(
     env,
@@ -819,13 +791,11 @@ export async function askDuration(
           [
 
             {
-
               text:
                 "♾ Selamanya",
 
               callback_data:
                 `duration:forever:${sessionId}`
-
             }
 
           ],
@@ -833,23 +803,19 @@ export async function askDuration(
           [
 
             {
-
               text:
                 "1 Hari",
 
               callback_data:
                 `duration:1d:${sessionId}`
-
             },
 
             {
-
               text:
                 "7 Hari",
 
               callback_data:
                 `duration:7d:${sessionId}`
-
             }
 
           ],
@@ -857,23 +823,19 @@ export async function askDuration(
           [
 
             {
-
               text:
                 "30 Hari",
 
               callback_data:
                 `duration:30d:${sessionId}`
-
             },
 
             {
-
               text:
                 "✏️ Custom",
 
               callback_data:
                 `duration:custom:${sessionId}`
-
             }
 
           ]
@@ -904,13 +866,9 @@ export async function setDuration(
       sessionId
     );
 
-
   if (!session) {
-
     return null;
-
   }
-
 
   await update(
     env,
@@ -926,7 +884,6 @@ export async function setDuration(
     }
   );
 
-
   return getSession(
     env,
     sessionId
@@ -936,7 +893,7 @@ export async function setDuration(
 
 
 // ======================================================
-// CREATE FILE FROM SESSION
+// CREATE FILE
 // ======================================================
 
 export async function createFileFromSession(
@@ -949,7 +906,8 @@ export async function createFileFromSession(
 
 
   const seconds =
-    session.duration_seconds == null
+    session.duration_seconds === null ||
+    session.duration_seconds === undefined
       ? null
       : Number(
           session.duration_seconds
@@ -1009,7 +967,6 @@ export async function createFileFromSession(
           null,
 
         caption_admin:
-          session.caption_admin ||
           null,
 
         protect_content:
@@ -1039,7 +996,7 @@ export async function createFileFromSession(
   ) {
 
     throw new Error(
-      "File gagal disimpan."
+      "File gagal disimpan ke database."
     );
 
   }
@@ -1089,9 +1046,9 @@ export async function finishFile(
   }
 
 
-  // ====================================================
+  // ==================================================
   // CREATE FILE
-  // ====================================================
+  // ==================================================
 
   const file =
     await createFileFromSession(
@@ -1100,9 +1057,9 @@ export async function finishFile(
     );
 
 
-  // ====================================================
+  // ==================================================
   // BOT USERNAME
-  // ====================================================
+  // ==================================================
 
   const botUsername =
     String(
@@ -1123,9 +1080,9 @@ export async function finishFile(
   }
 
 
-  // ====================================================
+  // ==================================================
   // LINK
-  // ====================================================
+  // ==================================================
 
   const link =
     `https://t.me/${botUsername}?start=${encodeURIComponent(
@@ -1133,18 +1090,16 @@ export async function finishFile(
     )}`;
 
 
-  // ====================================================
-  // KIRIM KE USER
-  // ====================================================
+  // ==================================================
+  // KIRIM LINK KE USER
+  // ==================================================
 
   await sendMessage(
     env,
     session.source_chat_id,
 
     "✅ LINK BERHASIL DIBUAT!\n" +
-    "🔗 " +
-    link +
-    "\n" +
+    `🔗 ${link}\n` +
     `⏳ Durasi: ${formatDuration(
       file.duration_seconds
     )}\n` +
@@ -1161,7 +1116,6 @@ export async function finishFile(
           [
 
             {
-
               text:
                 "🔗 Buka Link",
 
@@ -1180,9 +1134,9 @@ export async function finishFile(
   );
 
 
-  // ====================================================
-  // KIRIM INFO KE ADMIN CHANNEL
-  // ====================================================
+  // ==================================================
+  // KIRIM INFO KE CHANNEL
+  // ==================================================
 
   const channelId =
     getAdminChannelId(env);
@@ -1197,21 +1151,25 @@ export async function finishFile(
 
 
     let channelText =
+
       "📄 Nama: " +
       (
         file.file_name ||
         "Tanpa nama"
       ) +
+
       "\n\n" +
 
       "📦 Ukuran: " +
       formatFileSize(
         file.file_size
       ) +
+
       "\n\n" +
 
       "🔐 Akses: " +
       access +
+
       "\n" +
 
       "⏱️ Durasi: " +
@@ -1219,6 +1177,10 @@ export async function finishFile(
         file.duration_seconds
       );
 
+
+    // ==================================================
+    // CAPTION USER
+    // ==================================================
 
     if (
       file.caption_user
@@ -1231,6 +1193,10 @@ export async function finishFile(
     }
 
 
+    // ==================================================
+    // LINK
+    // ==================================================
+
     channelText +=
       "\n\n🔗 Link:";
 
@@ -1240,12 +1206,20 @@ export async function finishFile(
       link;
 
 
+    // ==================================================
+    // EXPIRED
+    // ==================================================
+
     channelText +=
       "\n\n📅 Expired: " +
       formatWIB(
         file.expires_at
       );
 
+
+    // ==================================================
+    // CAPTION ADMIN
+    // ==================================================
 
     if (
       file.caption_admin
@@ -1272,7 +1246,6 @@ export async function finishFile(
             [
 
               {
-
                 text:
                   "🔗 Buka Link",
 
@@ -1293,9 +1266,9 @@ export async function finishFile(
   }
 
 
-  // ====================================================
+  // ==================================================
   // HAPUS SESSION
-  // ====================================================
+  // ==================================================
 
   await remove(
     env,
@@ -1318,7 +1291,7 @@ export async function finishFile(
 
 
 // ======================================================
-// HANDLE CUSTOM DURATION TEXT
+// HANDLE CUSTOM DURATION
 // ======================================================
 
 export async function handleDurationText(
@@ -1366,21 +1339,6 @@ export async function handleDurationText(
   );
 
 
-  await update(
-    env,
-    "upload_sessions",
-    `session_id=eq.${encodeURIComponent(
-      sessionId
-    )}`,
-    {
-
-      step:
-        "finished"
-
-    }
-  );
-
-
   await finishFile(
     env,
     sessionId
@@ -1399,19 +1357,13 @@ export async function handleText(
 ) {
 
   const userId =
-    message.from?.id;
+    message?.from?.id;
 
   const chatId =
-    message.chat?.id;
+    message?.chat?.id;
 
-
-  if (
-    !userId ||
-    !chatId
-  ) {
-
+  if (!userId || !chatId) {
     return;
-
   }
 
 
@@ -1432,13 +1384,39 @@ export async function handleText(
     );
 
     return;
-
   }
 
 
-  // ====================================================
+  // ==================================================
+  // CUSTOM DURATION
+  // ==================================================
+
+  if (
+    session.step ===
+    "custom_duration"
+  ) {
+
+    await handleDurationText(
+      message,
+      env,
+      session.session_id
+    );
+
+    return;
+  }
+
+
+  // ==================================================
   // CAPTION
-  // ====================================================
+  // ==================================================
+  //
+  // Setelah user memilih Protect/Public,
+  // callback akan meminta caption.
+  //
+  // Karena input caption adalah TEXT biasa,
+  // router harus mengirimnya ke sini.
+  //
+  // ==================================================
 
   if (
     session.step ===
@@ -1457,43 +1435,31 @@ export async function handleText(
       await sendMessage(
         env,
         chatId,
-
         "❌ Caption tidak boleh kosong."
       );
 
       return;
-
     }
 
 
-    await setCaption(
-      env,
-      session.session_id,
-      caption
-    );
+    const updated =
+      await setCaption(
+        env,
+        session.session_id,
+        caption
+      );
 
 
-    await update(
-      env,
-      "upload_sessions",
-      `session_id=eq.${encodeURIComponent(
-        session.session_id
-      )}`,
-      {
+    if (!updated) {
 
-        step:
-          "duration"
+      await sendMessage(
+        env,
+        chatId,
+        "❌ Sesi tidak ditemukan."
+      );
 
-      }
-    );
-
-
-    await sendMessage(
-      env,
-      chatId,
-
-      "✅ Caption disimpan."
-    );
+      return;
+    }
 
 
     await askDuration(
@@ -1502,41 +1468,20 @@ export async function handleText(
       session.session_id
     );
 
-
     return;
-
   }
 
 
-  // ====================================================
-  // CUSTOM DURATION
-  // ====================================================
-
-  if (
-    session.step ===
-    "custom_duration"
-  ) {
-
-    await handleDurationText(
-      message,
-      env,
-      session.session_id
-    );
-
-    return;
-
-  }
-
-
-  // ====================================================
-  // TEXT DI LUAR ALUR
-  // ====================================================
+  // ==================================================
+  // DEFAULT
+  // ==================================================
 
   await sendMessage(
     env,
     chatId,
 
-    "⚙️ Silakan gunakan pilihan yang tersedia."
+    "📁 File sedang diproses.\n\n" +
+    "Gunakan pilihan yang tersedia."
   );
 
 }
