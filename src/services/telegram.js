@@ -1,101 +1,100 @@
 // ======================================================
-// TELEGRAM API
+// TELEGRAM API SERVICE
+// ======================================================
+
+function getBotToken(env) {
+
+  const token =
+    env.TELEGRAM_BOT_TOKEN;
+
+  if (!token) {
+
+    throw new Error(
+      "TELEGRAM_BOT_TOKEN belum diset."
+    );
+
+  }
+
+  return token;
+
+}
+
+
+// ======================================================
+// TELEGRAM REQUEST
 // ======================================================
 
 export async function telegram(
   env,
   method,
-  data = {}
+  body = {}
 ) {
 
-  if (!env.TELEGRAM_BOT_TOKEN) {
-    throw new Error(
-      "TELEGRAM_BOT_TOKEN belum diset."
-    );
-  }
+  const token =
+    getBotToken(env);
+
 
   const url =
-    `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${method}`;
+    `https://api.telegram.org/bot${token}/${method}`;
+
 
   const response =
     await fetch(
       url,
       {
-        method: "POST",
+
+        method:
+          "POST",
 
         headers: {
+
           "Content-Type":
             "application/json"
+
         },
 
         body:
-          JSON.stringify(
-            cleanData(data)
-          )
+          JSON.stringify(body)
+
       }
     );
+
 
   const text =
     await response.text();
 
-  let result;
+
+  let data;
 
   try {
 
-    result =
+    data =
       JSON.parse(text);
 
   } catch {
 
     throw new Error(
-      `Telegram ${method}: ${text}`
+      `Telegram ${method} invalid response: ${text}`
     );
 
   }
+
 
   if (
     !response.ok ||
-    !result.ok
+    !data.ok
   ) {
 
     throw new Error(
-      `Telegram ${method}: ${
-        result.description ||
-        text
-      }`
+      `Telegram ${method} error: ` +
+      `${data.description || text}`
     );
 
   }
 
-  return result.result;
-}
 
+  return data.result;
 
-// ======================================================
-// CLEAN UNDEFINED
-// ======================================================
-
-function cleanData(data) {
-
-  const output = {};
-
-  for (
-    const [key, value]
-    of Object.entries(data || {})
-  ) {
-
-    if (
-      value !== undefined
-    ) {
-
-      output[key] =
-        value;
-
-    }
-
-  }
-
-  return output;
 }
 
 
@@ -107,19 +106,21 @@ export async function sendMessage(
   env,
   chatId,
   text,
-  options = {}
+  extra = {}
 ) {
 
   return telegram(
     env,
     "sendMessage",
     {
+
       chat_id:
         chatId,
 
       text,
 
-      ...options
+      ...extra
+
     }
   );
 
@@ -127,7 +128,42 @@ export async function sendMessage(
 
 
 // ======================================================
-// EDIT MESSAGE
+// ANSWER CALLBACK QUERY
+// ======================================================
+
+export async function answerCallbackQuery(
+  env,
+  callbackQueryId,
+  text = null
+) {
+
+  const body = {
+
+    callback_query_id:
+      callbackQueryId
+
+  };
+
+
+  if (text) {
+
+    body.text =
+      text;
+
+  }
+
+
+  return telegram(
+    env,
+    "answerCallbackQuery",
+    body
+  );
+
+}
+
+
+// ======================================================
+// EDIT MESSAGE TEXT
 // ======================================================
 
 export async function editMessageText(
@@ -135,13 +171,14 @@ export async function editMessageText(
   chatId,
   messageId,
   text,
-  options = {}
+  extra = {}
 ) {
 
   return telegram(
     env,
     "editMessageText",
     {
+
       chat_id:
         chatId,
 
@@ -150,38 +187,8 @@ export async function editMessageText(
 
       text,
 
-      ...options
-    }
-  );
+      ...extra
 
-}
-
-
-// ======================================================
-// ANSWER CALLBACK
-// ======================================================
-
-export async function answerCallbackQuery(
-  env,
-  callbackQueryId,
-  text = "",
-  options = {}
-) {
-
-  return telegram(
-    env,
-    "answerCallbackQuery",
-    {
-      callback_query_id:
-        callbackQueryId,
-
-      ...(text
-        ? {
-            text
-          }
-        : {}),
-
-      ...options
     }
   );
 
@@ -202,11 +209,13 @@ export async function deleteMessage(
     env,
     "deleteMessage",
     {
+
       chat_id:
         chatId,
 
       message_id:
         messageId
+
     }
   );
 
@@ -214,26 +223,30 @@ export async function deleteMessage(
 
 
 // ======================================================
-// SEND DOCUMENT
+// FORWARD MESSAGE
 // ======================================================
 
-export async function sendDocument(
+export async function forwardMessage(
   env,
   chatId,
-  document,
-  options = {}
+  fromChatId,
+  messageId
 ) {
 
   return telegram(
     env,
-    "sendDocument",
+    "forwardMessage",
     {
+
       chat_id:
         chatId,
 
-      document,
+      from_chat_id:
+        fromChatId,
 
-      ...options
+      message_id:
+        messageId
+
     }
   );
 
@@ -241,26 +254,33 @@ export async function sendDocument(
 
 
 // ======================================================
-// SEND PHOTO
+// COPY MESSAGE
 // ======================================================
 
-export async function sendPhoto(
+export async function copyMessage(
   env,
   chatId,
-  photo,
-  options = {}
+  fromChatId,
+  messageId,
+  extra = {}
 ) {
 
   return telegram(
     env,
-    "sendPhoto",
+    "copyMessage",
     {
+
       chat_id:
         chatId,
 
-      photo,
+      from_chat_id:
+        fromChatId,
 
-      ...options
+      message_id:
+        messageId,
+
+      ...extra
+
     }
   );
 
@@ -268,179 +288,23 @@ export async function sendPhoto(
 
 
 // ======================================================
-// SEND VIDEO
+// GET FILE
 // ======================================================
 
-export async function sendVideo(
+export async function getFile(
   env,
-  chatId,
-  video,
-  options = {}
+  fileId
 ) {
 
   return telegram(
     env,
-    "sendVideo",
+    "getFile",
     {
-      chat_id:
-        chatId,
 
-      video,
+      file_id:
+        fileId
 
-      ...options
     }
-  );
-
-}
-
-
-// ======================================================
-// SEND AUDIO
-// ======================================================
-
-export async function sendAudio(
-  env,
-  chatId,
-  audio,
-  options = {}
-) {
-
-  return telegram(
-    env,
-    "sendAudio",
-    {
-      chat_id:
-        chatId,
-
-      audio,
-
-      ...options
-    }
-  );
-
-}
-
-
-// ======================================================
-// SEND VOICE
-// ======================================================
-
-export async function sendVoice(
-  env,
-  chatId,
-  voice,
-  options = {}
-) {
-
-  return telegram(
-    env,
-    "sendVoice",
-    {
-      chat_id:
-        chatId,
-
-      voice,
-
-      ...options
-    }
-  );
-
-}
-
-
-// ======================================================
-// SEND ANIMATION
-// ======================================================
-
-export async function sendAnimation(
-  env,
-  chatId,
-  animation,
-  options = {}
-) {
-
-  return telegram(
-    env,
-    "sendAnimation",
-    {
-      chat_id:
-        chatId,
-
-      animation,
-
-      ...options
-    }
-  );
-
-}
-
-
-// ======================================================
-// SEND VIDEO NOTE
-// ======================================================
-
-export async function sendVideoNote(
-  env,
-  chatId,
-  videoNote,
-  options = {}
-) {
-
-  return telegram(
-    env,
-    "sendVideoNote",
-    {
-      chat_id:
-        chatId,
-
-      video_note:
-        videoNote,
-
-      ...options
-    }
-  );
-
-}
-
-
-// ======================================================
-// SEND STICKER
-// ======================================================
-
-export async function sendSticker(
-  env,
-  chatId,
-  sticker,
-  options = {}
-) {
-
-  return telegram(
-    env,
-    "sendSticker",
-    {
-      chat_id:
-        chatId,
-
-      sticker,
-
-      ...options
-    }
-  );
-
-}
-
-
-// ======================================================
-// GET ME
-// ======================================================
-
-export async function getMe(
-  env
-) {
-
-  return telegram(
-    env,
-    "getMe"
   );
 
 }
@@ -452,19 +316,66 @@ export async function getMe(
 
 export async function setWebhook(
   env,
-  webhookUrl,
-  options = {}
+  webhookUrl
 ) {
 
   return telegram(
     env,
     "setWebhook",
     {
-      url:
-        webhookUrl,
 
-      ...options
+      url:
+        webhookUrl
+
     }
+  );
+
+}
+
+
+// ======================================================
+// DELETE WEBHOOK
+// ======================================================
+
+export async function deleteWebhook(
+  env
+) {
+
+  return telegram(
+    env,
+    "deleteWebhook"
+  );
+
+}
+
+
+// ======================================================
+// GET WEBHOOK INFO
+// ======================================================
+
+export async function getWebhookInfo(
+  env
+) {
+
+  return telegram(
+    env,
+    "getWebhookInfo"
+  );
+
+}
+
+
+// ======================================================
+// BOT INFO
+// ======================================================
+
+export async function getMe(
+  env
+) {
+
+  return telegram(
+    env,
+    "getMe"
   );
 
 }
