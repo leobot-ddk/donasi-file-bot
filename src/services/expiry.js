@@ -1,168 +1,202 @@
 // ======================================================
-// EXPIRY SERVICE
+// FILE EXPIRY SERVICE
 // ======================================================
 
 import {
-  telegram
-} from "./telegram.js";
-
-import {
-  select
+  selectOne,
+  update
 } from "../database/supabase.js";
 
+import {
+  deleteBotFile
+} from "./telegram.js";
+
 
 // ======================================================
-// PROCESS EXPIRED FILES
+// EXPIRE FILES
+// ======================================================
+//
+// Tugas:
+// 1. Cari file yang sudah expired
+// 2. Hapus file yang pernah dikirim bot
+// 3. Tandai file sebagai expired
+//
 // ======================================================
 
-export async function processExpiredFiles(env) {
+export async function expireFiles(
+  env
+) {
 
-  const now =
-    new Date().toISOString();
+  try {
 
+    // ==================================================
+    // CARI FILE EXPIRED
+    // ==================================================
 
-  // ====================================================
-  // CARI FILE EXPIRED
-  // ====================================================
-
-  const files =
-    await select(
-      env,
-      "files",
-      `status=eq.active&expires_at=not.is.null&expires_at=lte.${encodeURIComponent(now)}&limit=100`
-    );
+    const now =
+      new Date().toISOString();
 
 
-  if (
-    !Array.isArray(files) ||
-    files.length === 0
-  ) {
+    const response =
+      await fetch(
+        `${env.SUPABASE_URL}/rest/v1/files` +
+        `?expires_at=not.is.null` +
+        `&expires_at=lte.${encodeURIComponent(now)}` +
+        `&status=eq.active` +
+        `&select=*`,
+        {
 
-    return {
-      checked: 0,
-      deleted: 0
-    };
+          method:
+            "GET",
 
-  }
+          headers: {
+
+            apikey:
+              env.SUPABASE_ANON_KEY,
+
+            Authorization:
+              `Bearer ${env.SUPABASE_ANON_KEY}`
+
+          }
+
+        }
+      );
 
 
-  let deleted = 0;
+    if (!response.ok) {
+
+      const text =
+        await response.text();
+
+      throw new Error(
+        `Supabase expire query error: ${text}`
+      );
+
+    }
 
 
-  // ====================================================
-  // PROSES SATU PER SATU
-  // ====================================================
+    const files =
+      await response.json();
 
-  for (const file of files) {
 
-    try {
+    if (
+      !Array.isArray(files) ||
+      files.length === 0
+    ) {
 
-      // -----------------------------------------------
-      // HAPUS PESAN FILE DARI USER
-      // -----------------------------------------------
+      return {
+
+        expired:
+          0,
+
+        deleted:
+          0
+
+      };
+
+    }
+
+
+    let expiredCount =
+      0;
+
+    let deletedCount =
+      0;
+
+
+    // ==================================================
+    // PROSES FILE
+    // ==================================================
+
+    for (
+      const file of files
+    ) {
+
+      // ================================================
+      // HAPUS PESAN FILE YANG DIKIRIM BOT
+      // ================================================
 
       if (
-        file.delivery_chat_id &&
-        file.delivery_message_id
+        file.sent_chat_id &&
+        file.sent_message_id
       ) {
 
-        try {
-
-          await telegram(
+        const deleted =
+          await deleteBotFile(
             env,
-            "deleteMessage",
-            {
-
-              chat_id:
-                file.delivery_chat_id,
-
-              message_id:
-                file.delivery_message_id
-
-            }
+            file.sent_chat_id,
+            file.sent_message_id
           );
 
-          deleted++;
 
-        } catch (error) {
+        if (deleted) {
 
-          console.error(
-            "DELETE EXPIRED MESSAGE ERROR:",
-            {
-              token: file.token,
-              error
-            }
-          );
+          deletedCount++;
 
         }
 
       }
 
 
-      // -----------------------------------------------
-      // UPDATE STATUS FILE
-      // -----------------------------------------------
+      // ================================================
+      // TANDAI EXPIRED
+      // ================================================
 
-      await updateExpired(
+      await update(
         env,
-        file.token
-      );
-
-    } catch (error) {
-
-      console.error(
-        "PROCESS EXPIRED FILE ERROR:",
+        "files",
+        `id=eq.${encodeURIComponent(
+          file.id
+        )}`,
         {
-          token: file.token,
-          error
+
+          status:
+            "expired",
+
+          deleted_at:
+            new Date().toISOString()
+
         }
       );
 
+
+      expiredCount++;
+
     }
+
+
+    console.log(
+      "EXPIRE FILES:",
+      {
+        expired:
+          expiredCount,
+
+        deleted:
+          deletedCount
+
+      }
+    );
+
+
+    return {
+
+      expired:
+        expiredCount,
+
+      deleted:
+        deletedCount
+
+    };
+
+  } catch (error) {
+
+    console.error(
+      "EXPIRE FILES ERROR:",
+      error
+    );
+
+    throw error;
 
   }
-
-
-  return {
-
-    checked:
-      files.length,
-
-    deleted
-
-  };
-
-}
-
-
-// ======================================================
-// UPDATE STATUS
-// ======================================================
-
-async function updateExpired(
-  env,
-  token
-) {
-
-  const {
-    update
-  } = await import(
-    "../database/supabase.js"
-  );
-
-
-  await update(
-    env,
-    "files",
-    `token=eq.${encodeURIComponent(
-      token
-    )}`,
-    {
-
-      status:
-        "expired"
-
-    }
-  );
 
 }
