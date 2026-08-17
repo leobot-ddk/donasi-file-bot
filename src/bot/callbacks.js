@@ -37,7 +37,8 @@ import {
   showCaptionMenu,
   startAddCaption,
   deleteCaption,
-  showAdmins
+  showAdmins,
+  editAdminMessage
 } from "./admin.js";
 
 
@@ -108,28 +109,46 @@ async function setStep(
 
 
 // ======================================================
-// ADMIN CALLBACK
+// GET CALLBACK MESSAGE DATA
+// ======================================================
+
+function getMessageData(
+  callback
+) {
+
+  return {
+
+    chatId:
+      callback?.message?.chat?.id,
+
+    messageId:
+      callback?.message?.message_id
+
+  };
+
+}
+
+
+// ======================================================
+// HANDLE ADMIN CALLBACK
 // ======================================================
 
 async function handleAdminCallback(
   callback,
-  env
+  env,
+  data
 ) {
-
-  const data =
-    callback?.data;
-
-  const callbackId =
-    callback?.id;
-
-  const message =
-    callback?.message;
-
-  const chatId =
-    message?.chat?.id;
 
   const userId =
     callback?.from?.id;
+
+  const {
+    chatId,
+    messageId
+  } =
+    getMessageData(
+      callback
+    );
 
 
   // ====================================================
@@ -145,8 +164,8 @@ async function handleAdminCallback(
 
     await answerCallback(
       env,
-      callbackId,
-      "❌ Akses ditolak."
+      callback.id,
+      "❌ Kamu bukan admin."
     );
 
     return true;
@@ -159,18 +178,22 @@ async function handleAdminCallback(
   // ====================================================
 
   if (
-    data === "admin:panel"
+    data ===
+    "admin:panel"
   ) {
 
     await answerCallback(
       env,
-      callbackId
+      callback.id
     );
+
 
     await showAdminPanel(
       env,
-      chatId
+      chatId,
+      messageId
     );
+
 
     return true;
 
@@ -182,19 +205,23 @@ async function handleAdminCallback(
   // ====================================================
 
   if (
-    data === "admin:dashboard"
+    data ===
+    "admin:dashboard"
   ) {
 
     await answerCallback(
       env,
-      callbackId,
-      "Memuat dashboard..."
+      callback.id,
+      "📊 Dashboard"
     );
+
 
     await showDashboard(
       env,
-      chatId
+      chatId,
+      messageId
     );
+
 
     return true;
 
@@ -206,20 +233,25 @@ async function handleAdminCallback(
   // ====================================================
 
   if (
-    data === "admin:files" ||
-    data === "admin:delete"
+    data ===
+    "admin:delete" ||
+    data ===
+    "admin:files"
   ) {
 
     await answerCallback(
       env,
-      callbackId,
-      "Memuat file..."
+      callback.id,
+      "📁 Daftar file"
     );
+
 
     await showFiles(
       env,
-      chatId
+      chatId,
+      messageId
     );
+
 
     return true;
 
@@ -242,17 +274,32 @@ async function handleAdminCallback(
       );
 
 
+    if (!fileId) {
+
+      await answerCallback(
+        env,
+        callback.id,
+        "❌ ID file tidak valid."
+      );
+
+      return true;
+
+    }
+
+
     await answerCallback(
       env,
-      callbackId
+      callback.id
     );
 
 
     await showFileDetail(
       env,
       chatId,
-      fileId
+      fileId,
+      messageId
     );
+
 
     return true;
 
@@ -260,7 +307,7 @@ async function handleAdminCallback(
 
 
   // ====================================================
-  // DISABLE LINK
+  // DISABLE FILE
   // ====================================================
 
   if (
@@ -275,18 +322,33 @@ async function handleAdminCallback(
       );
 
 
+    if (!fileId) {
+
+      await answerCallback(
+        env,
+        callback.id,
+        "❌ ID file tidak valid."
+      );
+
+      return true;
+
+    }
+
+
     await answerCallback(
       env,
-      callbackId,
-      "Menonaktifkan link..."
+      callback.id,
+      "🗑️ Link dinonaktifkan."
     );
 
 
     await disableFile(
       env,
       chatId,
-      fileId
+      fileId,
+      messageId
     );
+
 
     return true;
 
@@ -294,24 +356,27 @@ async function handleAdminCallback(
 
 
   // ====================================================
-  // USER MENU
+  // USER LIST
   // ====================================================
 
   if (
-    data === "admin:users"
+    data ===
+    "admin:users"
   ) {
 
     await answerCallback(
       env,
-      callbackId,
-      "Memuat user..."
+      callback.id,
+      "👤 User"
     );
 
 
     await showUsers(
       env,
-      chatId
+      chatId,
+      messageId
     );
+
 
     return true;
 
@@ -334,10 +399,39 @@ async function handleAdminCallback(
       );
 
 
+    if (!targetUserId) {
+
+      await answerCallback(
+        env,
+        callback.id,
+        "❌ User ID tidak valid."
+      );
+
+      return true;
+
+    }
+
+
+    if (
+      String(targetUserId) ===
+      String(userId)
+    ) {
+
+      await answerCallback(
+        env,
+        callback.id,
+        "❌ Kamu tidak bisa memblokir diri sendiri."
+      );
+
+      return true;
+
+    }
+
+
     await answerCallback(
       env,
-      callbackId,
-      "Memblokir user..."
+      callback.id,
+      "🔴 User diblokir."
     );
 
 
@@ -345,8 +439,10 @@ async function handleAdminCallback(
       env,
       chatId,
       userId,
-      targetUserId
+      targetUserId,
+      messageId
     );
+
 
     return true;
 
@@ -369,18 +465,33 @@ async function handleAdminCallback(
       );
 
 
+    if (!targetUserId) {
+
+      await answerCallback(
+        env,
+        callback.id,
+        "❌ User ID tidak valid."
+      );
+
+      return true;
+
+    }
+
+
     await answerCallback(
       env,
-      callbackId,
-      "Membuka blokir..."
+      callback.id,
+      "🟢 User di-unblock."
     );
 
 
     await unblockUser(
       env,
       chatId,
-      targetUserId
+      targetUserId,
+      messageId
     );
+
 
     return true;
 
@@ -392,19 +503,23 @@ async function handleAdminCallback(
   // ====================================================
 
   if (
-    data === "admin:caption"
+    data ===
+    "admin:caption"
   ) {
 
     await answerCallback(
       env,
-      callbackId
+      callback.id,
+      "📝 Caption"
     );
 
 
     await showCaptionMenu(
       env,
-      chatId
+      chatId,
+      messageId
     );
+
 
     return true;
 
@@ -416,13 +531,13 @@ async function handleAdminCallback(
   // ====================================================
 
   if (
-    data === "admin:caption:add"
+    data ===
+    "admin:caption:add"
   ) {
 
     await answerCallback(
       env,
-      callbackId,
-      "Silakan kirim caption."
+      callback.id
     );
 
 
@@ -431,6 +546,7 @@ async function handleAdminCallback(
       userId,
       chatId
     );
+
 
     return true;
 
@@ -453,18 +569,33 @@ async function handleAdminCallback(
       );
 
 
+    if (!captionId) {
+
+      await answerCallback(
+        env,
+        callback.id,
+        "❌ ID caption tidak valid."
+      );
+
+      return true;
+
+    }
+
+
     await answerCallback(
       env,
-      callbackId,
-      "Menghapus caption..."
+      callback.id,
+      "🗑️ Caption dihapus."
     );
 
 
     await deleteCaption(
       env,
       chatId,
-      captionId
+      captionId,
+      messageId
     );
+
 
     return true;
 
@@ -476,19 +607,23 @@ async function handleAdminCallback(
   // ====================================================
 
   if (
-    data === "admin:admins"
+    data ===
+    "admin:admins"
   ) {
 
     await answerCallback(
       env,
-      callbackId
+      callback.id,
+      "⚙️ Admin"
     );
 
 
     await showAdmins(
       env,
-      chatId
+      chatId,
+      messageId
     );
+
 
     return true;
 
@@ -547,7 +682,8 @@ export async function handleCallback(
       const handled =
         await handleAdminCallback(
           callback,
-          env
+          env,
+          data
         );
 
 
@@ -581,7 +717,8 @@ export async function handleCallback(
 
 
       const protect =
-        value === "on";
+        value ===
+        "on";
 
 
       const session =
@@ -709,6 +846,7 @@ export async function handleCallback(
 
       const parts =
         data.split(":");
+
 
       const sessionId =
         parts
@@ -846,6 +984,7 @@ export async function handleCallback(
 
             text:
               "✏️ Masukkan durasi custom.\n\n" +
+
               "Contoh:\n" +
               "30min\n" +
               "2h\n" +
