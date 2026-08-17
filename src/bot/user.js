@@ -60,46 +60,25 @@ function formatFileSize(bytes) {
     bytes === undefined ||
     !Number.isFinite(Number(bytes))
   ) {
-
     return "-";
-
   }
 
   const size =
     Number(bytes);
 
-
   if (size < 1024) {
-
     return `${size} B`;
-
   }
-
 
   if (size < 1024 * 1024) {
-
-    return (
-      `${(size / 1024).toFixed(2)} KB`
-    );
-
+    return `${(size / 1024).toFixed(2)} KB`;
   }
-
 
   if (size < 1024 * 1024 * 1024) {
-
-    return (
-      `${(size / (1024 * 1024)).toFixed(2)} MB`
-    );
-
+    return `${(size / (1024 * 1024)).toFixed(2)} MB`;
   }
 
-
-  return (
-    `${(
-      size /
-      (1024 * 1024 * 1024)
-    ).toFixed(2)} GB`
-  );
+  return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 
 }
 
@@ -111,64 +90,36 @@ function formatFileSize(bytes) {
 function formatWIB(dateValue) {
 
   if (!dateValue) {
-
     return "Permanen";
-
   }
-
 
   const date =
     new Date(dateValue);
 
-
-  if (
-    Number.isNaN(
-      date.getTime()
-    )
-  ) {
-
+  if (Number.isNaN(date.getTime())) {
     return "-";
-
   }
-
 
   const parts =
     new Intl.DateTimeFormat(
       "id-ID",
       {
-
-        timeZone:
-          "Asia/Jakarta",
-
-        day:
-          "numeric",
-
-        month:
-          "long",
-
-        year:
-          "numeric",
-
-        hour:
-          "2-digit",
-
-        minute:
-          "2-digit",
-
-        hour12:
-          false
-
+        timeZone: "Asia/Jakarta",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
       }
     ).formatToParts(date);
-
 
   const get =
     type => {
 
       const part =
         parts.find(
-          item =>
-            item.type === type
+          item => item.type === type
         );
 
       return part
@@ -176,7 +127,6 @@ function formatWIB(dateValue) {
         : "";
 
     };
-
 
   return (
     `${get("day")} ${get("month")} ${get("year")} ` +
@@ -187,7 +137,7 @@ function formatWIB(dateValue) {
 
 
 // ======================================================
-// GET SESSION TERBARU USER
+// GET SESSION USER
 // ======================================================
 
 export async function getUserState(
@@ -227,7 +177,23 @@ export async function getSession(
 
 
 // ======================================================
-// COPY FILE KE GRUP ADMIN
+// COPY FILE LANGSUNG KE GRUP ADMIN
+// ======================================================
+//
+// File langsung disalin ketika user mengirim file.
+//
+// Tidak menunggu:
+// - protect/public
+// - caption
+// - durasi
+// - link
+//
+// Salinan permanen di grup admin.
+// Protect Content = false.
+//
+// Ditambahkan tombol:
+// 👤 User Pengirim
+//
 // ======================================================
 
 async function copyOriginalToAdminGroup(
@@ -237,7 +203,6 @@ async function copyOriginalToAdminGroup(
 
   const groupId =
     getAdminGroupId(env);
-
 
   if (!groupId) {
 
@@ -249,13 +214,14 @@ async function copyOriginalToAdminGroup(
 
   }
 
-
   const messageId =
     message.message_id;
 
   const sourceChatId =
     message.chat?.id;
 
+  const userId =
+    message.from?.id;
 
   if (
     !messageId ||
@@ -266,20 +232,52 @@ async function copyOriginalToAdminGroup(
 
   }
 
-
   try {
+
+    const extra = {
+
+      protect_content:
+        false
+
+    };
+
+
+    // ==================================================
+    // TOMBOL USER PENGIRIM
+    // ==================================================
+
+    if (userId) {
+
+      extra.reply_markup = {
+
+        inline_keyboard: [
+
+          [
+
+            {
+              text:
+                "👤 User Pengirim",
+
+              url:
+                `tg://user?id=${userId}`
+
+            }
+
+          ]
+
+        ]
+
+      };
+
+    }
+
 
     return await copyMessage(
       env,
       groupId,
       sourceChatId,
       messageId,
-      {
-
-        protect_content:
-          false
-
-      }
+      extra
     );
 
   } catch (error) {
@@ -308,13 +306,9 @@ export async function handleStart(
   const chatId =
     message.chat?.id;
 
-
   if (!chatId) {
-
     return;
-
   }
-
 
   const text =
     String(
@@ -322,10 +316,8 @@ export async function handleStart(
       ""
     ).trim();
 
-
   const parts =
     text.split(/\s+/);
-
 
   const token =
     parts.length > 1
@@ -406,9 +398,8 @@ export async function handleStart(
 
   if (
     file.expires_at &&
-    new Date(
-      file.expires_at
-    ).getTime() <= Date.now()
+    new Date(file.expires_at).getTime()
+      <= Date.now()
   ) {
 
     await update(
@@ -418,13 +409,10 @@ export async function handleStart(
         token
       )}`,
       {
-
         status:
           "expired"
-
       }
     );
-
 
     await sendMessage(
       env,
@@ -439,48 +427,7 @@ export async function handleStart(
 
 
   // ====================================================
-  // KIRIM FILE
-  // ====================================================
-
-  const sentMessage =
-    await sendFile(
-      env,
-      chatId,
-      file
-    );
-
-
-  // ====================================================
-  // SIMPAN MESSAGE ID
-  // ====================================================
-
-  if (
-    sentMessage &&
-    sentMessage.message_id
-  ) {
-
-    await update(
-      env,
-      "files",
-      `id=eq.${encodeURIComponent(
-        file.id
-      )}`,
-      {
-
-        sent_chat_id:
-          chatId,
-
-        sent_message_id:
-          sentMessage.message_id
-
-      }
-    );
-
-  }
-
-
-  // ====================================================
-  // UPDATE ACCESS
+  // ACCESS COUNT
   // ====================================================
 
   await update(
@@ -492,14 +439,23 @@ export async function handleStart(
     {
 
       access_count:
-        Number(
-          file.access_count || 0
-        ) + 1,
+        Number(file.access_count || 0) + 1,
 
       last_access_at:
         new Date().toISOString()
 
     }
+  );
+
+
+  // ====================================================
+  // KIRIM FILE
+  // ====================================================
+
+  await sendFile(
+    env,
+    chatId,
+    file
   );
 
 }
@@ -521,13 +477,8 @@ export async function handleMedia(
     message.chat?.id;
 
 
-  if (
-    !userId ||
-    !chatId
-  ) {
-
+  if (!userId || !chatId) {
     return;
-
   }
 
 
@@ -540,7 +491,6 @@ export async function handleMedia(
     await sendMessage(
       env,
       chatId,
-
       "❌ Jenis file tidak didukung."
     );
 
@@ -548,6 +498,10 @@ export async function handleMedia(
 
   }
 
+
+  // ====================================================
+  // SESSION
+  // ====================================================
 
   const sessionId =
     createSessionId();
@@ -600,7 +554,10 @@ export async function handleMedia(
         false,
 
       duration_seconds:
-        null
+        null,
+
+      step:
+        "protect"
 
     },
     false
@@ -608,7 +565,7 @@ export async function handleMedia(
 
 
   // ====================================================
-  // COPY KE GRUP ADMIN
+  // COPY LANGSUNG KE GRUP ADMIN
   // ====================================================
 
   await copyOriginalToAdminGroup(
@@ -637,23 +594,19 @@ export async function handleMedia(
           [
 
             {
-
               text:
                 "🔒 Protect Content",
 
               callback_data:
                 `protect:on:${sessionId}`
-
             },
 
             {
-
               text:
                 "🌐 Public",
 
               callback_data:
                 `protect:off:${sessionId}`
-
             }
 
           ]
@@ -684,11 +637,8 @@ export async function setProtect(
       sessionId
     );
 
-
   if (!session) {
-
     return null;
-
   }
 
 
@@ -701,7 +651,10 @@ export async function setProtect(
     {
 
       protect_content:
-        Boolean(value)
+        Boolean(value),
+
+      step:
+        "caption"
 
     }
   );
@@ -741,13 +694,11 @@ export async function askCaption(
           [
 
             {
-
               text:
                 "➡️ Tanpa Caption",
 
               callback_data:
                 `caption:none:${sessionId}`
-
             }
 
           ]
@@ -778,11 +729,8 @@ export async function setCaption(
       sessionId
     );
 
-
   if (!session) {
-
     return null;
-
   }
 
 
@@ -795,11 +743,10 @@ export async function setCaption(
     {
 
       caption_user:
-        caption ||
-        null,
+        caption || null,
 
       step:
-        "caption_done"
+        "duration"
 
     }
   );
@@ -838,13 +785,11 @@ export async function askDuration(
           [
 
             {
-
               text:
                 "♾ Selamanya",
 
               callback_data:
                 `duration:forever:${sessionId}`
-
             }
 
           ],
@@ -852,23 +797,19 @@ export async function askDuration(
           [
 
             {
-
               text:
                 "1 Hari",
 
               callback_data:
                 `duration:1d:${sessionId}`
-
             },
 
             {
-
               text:
                 "7 Hari",
 
               callback_data:
                 `duration:7d:${sessionId}`
-
             }
 
           ],
@@ -876,23 +817,19 @@ export async function askDuration(
           [
 
             {
-
               text:
                 "30 Hari",
 
               callback_data:
                 `duration:30d:${sessionId}`
-
             },
 
             {
-
               text:
                 "✏️ Custom",
 
               callback_data:
                 `duration:custom:${sessionId}`
-
             }
 
           ]
@@ -923,11 +860,8 @@ export async function setDuration(
       sessionId
     );
 
-
   if (!session) {
-
     return null;
-
   }
 
 
@@ -1045,16 +979,7 @@ export async function createFileFromSession(
           "active",
 
         access_count:
-          0,
-
-        sent_chat_id:
-          null,
-
-        sent_message_id:
-          null,
-
-        deleted_at:
-          null
+          0
 
       }
     );
@@ -1149,7 +1074,7 @@ export async function finishFile(
 
 
   // ====================================================
-  // PESAN USER
+  // USER
   // ====================================================
 
   await sendMessage(
@@ -1157,19 +1082,13 @@ export async function finishFile(
     session.source_chat_id,
 
     "✅ LINK BERHASIL DIBUAT!\n" +
-    "🔗 " +
-    link +
-    "\n" +
-    `⏳ Durasi: ${
-      formatDuration(
-        file.duration_seconds
-      )
-    }\n` +
-    `📅 Expired: ${
-      formatWIB(
-        file.expires_at
-      )
-    }`,
+    `🔗 ${link}\n` +
+    `⏳ Durasi: ${formatDuration(
+      file.duration_seconds
+    )}\n` +
+    `📅 Expired: ${formatWIB(
+      file.expires_at
+    )}`,
 
     {
 
@@ -1180,7 +1099,6 @@ export async function finishFile(
           [
 
             {
-
               text:
                 "🔗 Buka Link",
 
@@ -1251,7 +1169,11 @@ export async function finishFile(
 
 
     channelText +=
-      "\n\n🔗 Link:\n" +
+      "\n\n🔗 Link:";
+
+
+    channelText +=
+      "\n" +
       link;
 
 
@@ -1277,7 +1199,6 @@ export async function finishFile(
       env,
       channelId,
       channelText,
-
       {
 
         reply_markup: {
@@ -1287,7 +1208,6 @@ export async function finishFile(
             [
 
               {
-
                 text:
                   "🔗 Buka Link",
 
@@ -1388,6 +1308,21 @@ export async function handleDurationText(
 // ======================================================
 // HANDLE TEXT
 // ======================================================
+//
+// PENTING:
+//
+// Setelah user memilih Protect/Public,
+// user berada di step "caption".
+//
+// Jadi text berikutnya dianggap caption.
+//
+// Setelah caption disimpan,
+// step berubah menjadi "duration".
+//
+// Saat custom duration dipilih,
+// step berubah menjadi "custom_duration".
+//
+// ======================================================
 
 export async function handleText(
   message,
@@ -1401,13 +1336,8 @@ export async function handleText(
     message.chat?.id;
 
 
-  if (
-    !userId ||
-    !chatId
-  ) {
-
+  if (!userId || !chatId) {
     return;
-
   }
 
 
@@ -1473,7 +1403,6 @@ export async function handleText(
       await sendMessage(
         env,
         chatId,
-
         "❌ Caption tidak boleh kosong."
       );
 
@@ -1495,13 +1424,19 @@ export async function handleText(
       await sendMessage(
         env,
         chatId,
-
-        "❌ Sesi caption tidak ditemukan."
+        "❌ Sesi sudah tidak ditemukan."
       );
 
       return;
 
     }
+
+
+    await sendMessage(
+      env,
+      chatId,
+      "✅ Caption disimpan."
+    );
 
 
     await askDuration(
@@ -1516,14 +1451,14 @@ export async function handleText(
 
 
   // ====================================================
-  // TEXT LAIN
+  // STEP LAIN
   // ====================================================
 
   await sendMessage(
     env,
     chatId,
 
-    "📁 Silakan ikuti pilihan tombol yang tersedia."
+    "⚙️ Silakan gunakan tombol yang tersedia."
   );
 
 }
