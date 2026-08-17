@@ -72,6 +72,10 @@ export async function getSession(
   sessionId
 ) {
 
+  if (!sessionId) {
+    return null;
+  }
+
   return selectOne(
     env,
     "upload_sessions",
@@ -79,6 +83,241 @@ export async function getSession(
       sessionId
     )}&limit=1`
   );
+
+}
+
+
+// ======================================================
+// HANDLE START
+// ======================================================
+
+export async function handleStart(
+  message,
+  env
+) {
+
+  const chatId =
+    message.chat?.id;
+
+  const userId =
+    message.from?.id;
+
+  if (!chatId || !userId) {
+    return;
+  }
+
+
+  const text =
+    String(
+      message.text || ""
+    ).trim();
+
+
+  // ====================================================
+  // AMBIL TOKEN DARI /start TOKEN
+  // ====================================================
+
+  let token = null;
+
+  const parts =
+    text.split(/\s+/);
+
+  if (
+    parts.length >= 2 &&
+    parts[0].toLowerCase() === "/start"
+  ) {
+
+    token =
+      parts[1].trim();
+
+  }
+
+
+  // ====================================================
+  // START BIASA
+  // ====================================================
+
+  if (!token) {
+
+    await sendMessage(
+      env,
+      chatId,
+
+      "👋 Selamat datang!\n\n" +
+      "Kirim file ke bot ini untuk membuat link.\n\n" +
+      "File yang didukung:\n" +
+      "📄 Document\n" +
+      "🖼 Photo\n" +
+      "🎬 Video\n" +
+      "🎵 Audio\n" +
+      "🎙 Voice\n" +
+      "🎞 Animation\n" +
+      "📹 Video Note\n" +
+      "🎨 Sticker"
+    );
+
+    return;
+
+  }
+
+
+  // ====================================================
+  // CARI FILE
+  // ====================================================
+
+  const file =
+    await selectOne(
+      env,
+      "files",
+      `token=eq.${encodeURIComponent(
+        token
+      )}&limit=1`
+    );
+
+
+  if (!file) {
+
+    await sendMessage(
+      env,
+      chatId,
+
+      "❌ Link tidak ditemukan.\n\n" +
+      "Link mungkin salah atau sudah tidak tersedia."
+    );
+
+    return;
+
+  }
+
+
+  // ====================================================
+  // CEK STATUS
+  // ====================================================
+
+  if (
+    file.status &&
+    file.status !== "active"
+  ) {
+
+    await sendMessage(
+      env,
+      chatId,
+
+      "❌ Link sudah tidak aktif."
+    );
+
+    return;
+
+  }
+
+
+  // ====================================================
+  // CEK EXPIRY
+  // ====================================================
+
+  if (file.expires_at) {
+
+    const expires =
+      new Date(
+        file.expires_at
+      ).getTime();
+
+    if (
+      Number.isFinite(expires) &&
+      expires <= Date.now()
+    ) {
+
+      await update(
+        env,
+        "files",
+        `token=eq.${encodeURIComponent(
+          token
+        )}`,
+        {
+          status:
+            "expired"
+        }
+      ).catch(() => {});
+
+
+      await sendMessage(
+        env,
+        chatId,
+
+        "⏰ Link sudah kedaluwarsa."
+      );
+
+      return;
+
+    }
+
+  }
+
+
+  // ====================================================
+  // UPDATE ACCESS COUNT
+  // ====================================================
+
+  const currentAccess =
+    Number(
+      file.access_count || 0
+    );
+
+
+  await update(
+    env,
+    "files",
+    `token=eq.${encodeURIComponent(
+      token
+    )}`,
+    {
+
+      access_count:
+        currentAccess + 1,
+
+      last_access_at:
+        new Date().toISOString()
+
+    }
+  ).catch(error => {
+
+    console.error(
+      "ACCESS UPDATE ERROR:",
+      error
+    );
+
+  });
+
+
+  // ====================================================
+  // KIRIM FILE
+  // ====================================================
+
+  try {
+
+    await sendFile(
+      env,
+      chatId,
+      file
+    );
+
+  } catch (error) {
+
+    console.error(
+      "SEND FILE ERROR:",
+      error
+    );
+
+
+    await sendMessage(
+      env,
+      chatId,
+
+      "❌ Gagal mengirim file.\n\n" +
+      "Silakan coba lagi."
+    );
+
+  }
 
 }
 
@@ -113,6 +352,7 @@ export async function handleMedia(
     await sendMessage(
       env,
       chatId,
+
       "❌ Jenis file tidak didukung."
     );
 
@@ -128,54 +368,73 @@ export async function handleMedia(
   // SIMPAN SESSION
   // ====================================================
 
-  await insert(
-    env,
-    "upload_sessions",
-    {
+  const rows =
+    await insert(
+      env,
+      "upload_sessions",
+      {
 
-      session_id:
-        sessionId,
+        session_id:
+          sessionId,
 
-      telegram_id:
-        userId,
+        telegram_id:
+          userId,
 
-      source_chat_id:
-        chatId,
+        source_chat_id:
+          chatId,
 
-      source_message_id:
-        message.message_id,
+        source_message_id:
+          message.message_id,
 
-      media_type:
-        media.type,
+        media_type:
+          media.type,
 
-      telegram_file_id:
-        media.fileId,
+        telegram_file_id:
+          media.fileId,
 
-      file_name:
-        media.fileName ||
-        null,
+        file_name:
+          media.fileName ||
+          null,
 
-      mime_type:
-        media.mimeType ||
-        null,
+        mime_type:
+          media.mimeType ||
+          null,
 
-      file_size:
-        media.fileSize ||
-        null,
+        file_size:
+          media.fileSize ||
+          null,
 
-      caption_user:
-        message.caption ||
-        null,
+        caption_user:
+          message.caption ||
+          null,
 
-      protect_content:
-        false,
+        protect_content:
+          false,
 
-      duration_seconds:
-        null
+        duration_seconds:
+          null
 
-    },
-    false
-  );
+      },
+      true
+    );
+
+
+  if (
+    !Array.isArray(rows) ||
+    !rows[0]
+  ) {
+
+    await sendMessage(
+      env,
+      chatId,
+
+      "❌ Gagal menyimpan sesi file.\n\n" +
+      "Silakan kirim file kembali."
+    );
+
+    return;
+
+  }
 
 
   // ====================================================
@@ -346,7 +605,8 @@ export async function setCaption(
     {
 
       caption_user:
-        caption || null
+        caption ||
+        null
 
     }
   );
@@ -498,6 +758,15 @@ export async function createFileFromSession(
   session
 ) {
 
+  if (!session) {
+
+    throw new Error(
+      "Session tidak ditemukan."
+    );
+
+  }
+
+
   const token =
     createFileToken();
 
@@ -530,12 +799,7 @@ export async function createFileFromSession(
 
 
   // ====================================================
-  // INSERT KE TABEL files
-  // ====================================================
-  //
-  // Hanya menggunakan kolom yang memang ada
-  // di schema tabel files.
-  //
+  // INSERT FILE
   // ====================================================
 
   const rows =
@@ -638,7 +902,7 @@ export async function finishFile(
 
 
   // ====================================================
-  // DURASI
+  // CEK DURASI
   // ====================================================
 
   if (
@@ -690,7 +954,7 @@ export async function finishFile(
 
 
   // ====================================================
-  // LINK
+  // BUAT LINK
   // ====================================================
 
   const link =
@@ -700,7 +964,7 @@ export async function finishFile(
 
 
   // ====================================================
-  // KIRIM LINK KE USER
+  // KIRIM LINK
   // ====================================================
 
   await sendMessage(
@@ -783,16 +1047,179 @@ export async function handleDurationText(
   }
 
 
-  await setDuration(
-    env,
-    sessionId,
-    duration.seconds
-  );
+  const session =
+    await setDuration(
+      env,
+      sessionId,
+      duration.seconds
+    );
+
+
+  if (!session) {
+
+    await sendMessage(
+      env,
+      message.chat.id,
+
+      "❌ Sesi file tidak ditemukan.\n\n" +
+      "Kirim file kembali."
+    );
+
+    return;
+
+  }
 
 
   await finishFile(
     env,
     sessionId
+  );
+
+}
+
+
+// ======================================================
+// HANDLE TEXT
+// ======================================================
+
+export async function handleText(
+  message,
+  env
+) {
+
+  const userId =
+    message.from?.id;
+
+  const chatId =
+    message.chat?.id;
+
+  const text =
+    String(
+      message.text || ""
+    ).trim();
+
+
+  if (!userId || !chatId || !text) {
+    return;
+  }
+
+
+  // ====================================================
+  // CARI SESSION TERBARU
+  // ====================================================
+
+  const session =
+    await getUserState(
+      env,
+      userId
+    );
+
+
+  if (!session) {
+
+    await sendMessage(
+      env,
+      chatId,
+
+      "📁 Kirim file terlebih dahulu."
+    );
+
+    return;
+
+  }
+
+
+  // ====================================================
+  // JIKA TEXT ADALAH DURASI
+  // ====================================================
+  //
+  // Ini juga menangani custom duration.
+  //
+  // Contoh:
+  // 30min
+  // 2h
+  // 3d
+  // 2w
+  // 1m
+  // forever
+  //
+  // ====================================================
+
+  const parsed =
+    parseDuration(
+      text
+    );
+
+
+  if (
+    parsed &&
+    session.duration_seconds === null
+  ) {
+
+    await handleDurationText(
+      message,
+      env,
+      session.session_id
+    );
+
+    return;
+
+  }
+
+
+  // ====================================================
+  // JIKA DURASI SUDAH ADA
+  // ====================================================
+
+  if (
+    session.duration_seconds !== null &&
+    session.duration_seconds !== undefined
+  ) {
+
+    await sendMessage(
+      env,
+      chatId,
+
+      "ℹ️ Sesi file ini sedang diproses.\n\n" +
+      "Kirim file baru jika ingin membuat link lain."
+    );
+
+    return;
+
+  }
+
+
+  // ====================================================
+  // TEXT DIANGGAP CAPTION
+  // ====================================================
+
+  const updated =
+    await setCaption(
+      env,
+      session.session_id,
+      text
+    );
+
+
+  if (!updated) {
+
+    await sendMessage(
+      env,
+      chatId,
+
+      "❌ Sesi file tidak ditemukan.\n\n" +
+      "Kirim file kembali."
+    );
+
+    return;
+
+  }
+
+
+  await askDuration(
+    env,
+    chatId,
+    session.session_id
   );
 
 }
@@ -825,6 +1252,10 @@ export async function sendFile(
     file.media_type
   ) {
 
+    // ==================================================
+    // PHOTO
+    // ==================================================
+
     case "photo":
 
       return telegram(
@@ -844,6 +1275,10 @@ export async function sendFile(
         }
       );
 
+
+    // ==================================================
+    // VIDEO
+    // ==================================================
 
     case "video":
 
@@ -865,6 +1300,10 @@ export async function sendFile(
       );
 
 
+    // ==================================================
+    // AUDIO
+    // ==================================================
+
     case "audio":
 
       return telegram(
@@ -884,6 +1323,10 @@ export async function sendFile(
         }
       );
 
+
+    // ==================================================
+    // VOICE
+    // ==================================================
 
     case "voice":
 
@@ -905,6 +1348,10 @@ export async function sendFile(
       );
 
 
+    // ==================================================
+    // ANIMATION
+    // ==================================================
+
     case "animation":
 
       return telegram(
@@ -925,6 +1372,10 @@ export async function sendFile(
       );
 
 
+    // ==================================================
+    // VIDEO NOTE
+    // ==================================================
+
     case "video_note":
 
       return telegram(
@@ -941,6 +1392,10 @@ export async function sendFile(
       );
 
 
+    // ==================================================
+    // STICKER
+    // ==================================================
+
     case "sticker":
 
       return telegram(
@@ -956,6 +1411,10 @@ export async function sendFile(
         }
       );
 
+
+    // ==================================================
+    // DOCUMENT
+    // ==================================================
 
     case "document":
 
