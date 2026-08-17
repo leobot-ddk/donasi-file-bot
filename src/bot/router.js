@@ -28,7 +28,8 @@ import {
 
 import {
   handleAdminCommand,
-  handleAdminText
+  handleAdminText,
+  hasAdminSession
 } from "./admin.js";
 
 
@@ -285,15 +286,38 @@ export async function handleUpdate(
     ) {
 
       // =================================================
-      // CEK SESSION UPLOAD
+      // ADMIN SESSION
       // =================================================
       //
-      // Harus dilakukan sebelum ADMIN TEXT.
+      // HARUS dicek sebelum upload session user.
       //
-      // Admin yang sedang melakukan proses upload file
-      // tetap harus bisa mengirim caption/durasi melalui
-      // user.js.
+      // Ini menangani:
+      // - Tambah caption admin
       //
+      // sehingga pesan caption tidak masuk ke
+      // handleText() milik user.
+      //
+      // =================================================
+
+      if (
+        admin &&
+        hasAdminSession(
+          userId
+        )
+      ) {
+
+        await handleAdminText(
+          message,
+          env
+        );
+
+        return;
+
+      }
+
+
+      // =================================================
+      // USER UPLOAD SESSION
       // =================================================
 
       const session =
@@ -351,10 +375,6 @@ export async function handleUpdate(
       error
     );
 
-
-    // ==================================================
-    // ERROR MESSAGE
-    // ==================================================
 
     try {
 
