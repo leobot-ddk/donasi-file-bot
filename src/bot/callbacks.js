@@ -30,7 +30,7 @@ import {
   showDashboard,
   showFiles,
   showFileDetail,
-  disableFile,
+  deleteFile,
   showUsers,
   blockUser,
   unblockUser,
@@ -231,6 +231,14 @@ async function handleAdminCallback(
   // ====================================================
   // FILE LIST
   // ====================================================
+  //
+  // admin:delete
+  // digunakan sebagai menu daftar file.
+  //
+  // Daftar file sekarang hanya menampilkan
+  // file yang masih aktif.
+  //
+  // ====================================================
 
   if (
     data ===
@@ -242,7 +250,7 @@ async function handleAdminCallback(
     await answerCallback(
       env,
       callback.id,
-      "📁 Daftar file"
+      "📁 Daftar file aktif"
     );
 
 
@@ -307,18 +315,26 @@ async function handleAdminCallback(
 
 
   // ====================================================
-  // DISABLE FILE
+  // DELETE FILE
+  // ====================================================
+  //
+  // Menghapus permanen data file dari database.
+  //
+  // Callback:
+  //
+  // admin:deletefile:ID
+  //
   // ====================================================
 
   if (
     data.startsWith(
-      "admin:disable:"
+      "admin:deletefile:"
     )
   ) {
 
     const fileId =
       data.substring(
-        "admin:disable:".length
+        "admin:deletefile:".length
       );
 
 
@@ -338,11 +354,11 @@ async function handleAdminCallback(
     await answerCallback(
       env,
       callback.id,
-      "🗑️ Link dinonaktifkan."
+      "🗑️ Link dihapus."
     );
 
 
-    await disableFile(
+    await deleteFile(
       env,
       chatId,
       fileId,
