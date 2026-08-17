@@ -104,67 +104,6 @@ export async function handleUpdate(
 
 
     // ==================================================
-    // CEK SESI UPLOAD
-    // ==================================================
-    //
-    // Ini HARUS dilakukan sebelum ADMIN TEXT.
-    //
-    // Jika admin sedang:
-    // - mengisi caption
-    // - memilih durasi
-    // - mengisi custom duration
-    //
-    // maka teks tersebut diproses sebagai bagian
-    // dari sesi upload, bukan sebagai teks admin.
-    //
-    // ==================================================
-
-    let uploadSession = null;
-
-    if (
-      typeof message.text === "string"
-    ) {
-
-      try {
-
-        uploadSession =
-          await getUserState(
-            env,
-            userId
-          );
-
-      } catch (sessionError) {
-
-        console.error(
-          "GET USER SESSION ERROR:",
-          sessionError
-        );
-
-      }
-
-    }
-
-
-    // ==================================================
-    // TEXT DENGAN SESI UPLOAD
-    // ==================================================
-
-    if (
-      typeof message.text === "string" &&
-      uploadSession
-    ) {
-
-      await handleText(
-        message,
-        env
-      );
-
-      return;
-
-    }
-
-
-    // ==================================================
     // ADMIN COMMAND
     // ==================================================
 
@@ -241,34 +180,68 @@ export async function handleUpdate(
 
 
     // ==================================================
-    // ADMIN TEXT
-    // ==================================================
-
-    if (
-      typeof message.text === "string" &&
-      isAdmin(
-        userId,
-        env
-      )
-    ) {
-
-      await handleAdminText(
-        message,
-        env
-      );
-
-      return;
-
-    }
-
-
-    // ==================================================
-    // TEXT BIASA
+    // TEXT
     // ==================================================
 
     if (
       typeof message.text === "string"
     ) {
+
+      // =================================================
+      // CEK SESSION UPLOAD USER
+      // =================================================
+      //
+      // Ini harus dicek SEBELUM ADMIN TEXT.
+      //
+      // Jika admin sedang upload file dan kemudian
+      // mengetik caption, caption harus masuk ke
+      // handleText(), bukan handleAdminText().
+      //
+      // =================================================
+
+      const session =
+        await getUserState(
+          env,
+          userId
+        );
+
+
+      if (session) {
+
+        await handleText(
+          message,
+          env
+        );
+
+        return;
+
+      }
+
+
+      // =================================================
+      // ADMIN TEXT
+      // =================================================
+
+      if (
+        isAdmin(
+          userId,
+          env
+        )
+      ) {
+
+        await handleAdminText(
+          message,
+          env
+        );
+
+        return;
+
+      }
+
+
+      // =================================================
+      // TEXT USER BIASA
+      // =================================================
 
       await handleText(
         message,
