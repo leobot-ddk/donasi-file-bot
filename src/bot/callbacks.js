@@ -3,11 +3,11 @@
 // ======================================================
 
 import {
-  answerCallbackQuery,
-  sendMessage
+  telegram
 } from "../services/telegram.js";
 
 import {
+  getSession,
   setProtect,
   askCaption,
   setCaption,
@@ -18,199 +18,215 @@ import {
 
 
 // ======================================================
+// ANSWER CALLBACK
+// ======================================================
+
+async function answerCallback(
+  env,
+  callbackId,
+  text = ""
+) {
+
+  try {
+
+    await telegram(
+      env,
+      "answerCallbackQuery",
+      {
+
+        callback_query_id:
+          callbackId,
+
+        text,
+
+        show_alert:
+          false
+
+      }
+    );
+
+  } catch (error) {
+
+    console.error(
+      "ANSWER CALLBACK ERROR:",
+      error
+    );
+
+  }
+
+}
+
+
+// ======================================================
 // HANDLE CALLBACK
 // ======================================================
 
 export async function handleCallback(
-  query,
+  callback,
   env
 ) {
 
-  if (!query) {
-    return;
-  }
+  try {
+
+    const data =
+      callback?.data;
+
+    const callbackId =
+      callback?.id;
+
+    const message =
+      callback?.message;
+
+    const chatId =
+      message?.chat?.id;
 
 
-  const queryId =
-    query.id;
-
-  const userId =
-    query.from?.id;
-
-  const chatId =
-    query.message?.chat?.id;
-
-  const data =
-    String(
-      query.data || ""
-    );
-
-
-  if (!userId || !chatId) {
-
-    await answerCallbackQuery(
-      env,
-      queryId,
-      "❌ Data pengguna tidak ditemukan."
-    ).catch(() => {});
-
-    return;
-  }
-
-
-  // Tutup loading tombol
-  await answerCallbackQuery(
-    env,
-    queryId
-  ).catch(() => {});
-
-
-  // ====================================================
-  // PARSE CALLBACK DATA
-  // ====================================================
-  //
-  // Format:
-  //
-  // protect:on:SESSION_ID
-  // protect:off:SESSION_ID
-  // caption:none:SESSION_ID
-  // duration:forever:SESSION_ID
-  // duration:1d:SESSION_ID
-  // duration:7d:SESSION_ID
-  // duration:30d:SESSION_ID
-  // duration:custom:SESSION_ID
-  //
-  // ====================================================
-
-  const parts =
-    data.split(":");
-
-  const action =
-    parts[0] || "";
-
-  const value =
-    parts[1] || "";
-
-  const sessionId =
-    parts.slice(2).join(":");
-
-
-  if (!sessionId) {
-
-    await sendMessage(
-      env,
-      chatId,
-      "❌ Sesi file tidak ditemukan.\n\nKirim file kembali."
-    );
-
-    return;
-  }
-
-
-  // ====================================================
-  // PROTECT ON
-  // ====================================================
-
-  if (
-    action === "protect" &&
-    value === "on"
-  ) {
-
-    const session =
-      await setProtect(
-        env,
-        sessionId,
-        true
-      );
-
-
-    if (!session) {
-
-      await sendMessage(
-        env,
-        chatId,
-        "❌ Sesi file tidak ditemukan.\n\nKirim file kembali."
-      );
-
+    if (!data || !callbackId) {
       return;
     }
 
 
-    await sendMessage(
-      env,
-      chatId,
-      "🔒 Protect Content: ON"
-    );
+    // ==================================================
+    // PROTECT
+    // ==================================================
+
+    if (
+      data.startsWith(
+        "protect:"
+      )
+    ) {
+
+      const parts =
+        data.split(":");
 
 
-    await askCaption(
-      env,
-      chatId,
-      sessionId
-    );
+      const value =
+        parts[1];
+
+      const sessionId =
+        parts.slice(2).join(":");
 
 
-    return;
-  }
+      const protect =
+        value === "on";
 
 
-  // ====================================================
-  // PROTECT OFF
-  // ====================================================
+      const session =
+        await setProtect(
+          env,
+          sessionId,
+          protect
+        );
 
-  if (
-    action === "protect" &&
-    value === "off"
-  ) {
 
-    const session =
-      await setProtect(
+      if (!session) {
+
+        await answerCallback(
+          env,
+          callbackId,
+          "Sesi tidak ditemukan."
+        );
+
+        return;
+
+      }
+
+
+      await answerCallback(
         env,
-        sessionId,
-        false
+        callbackId,
+        protect
+          ? "Protect Content dipilih."
+          : "Public dipilih."
       );
 
 
-    if (!session) {
-
-      await sendMessage(
+      await askCaption(
         env,
         chatId,
-        "❌ Sesi file tidak ditemukan.\n\nKirim file kembali."
+        sessionId
       );
 
+
       return;
+
     }
 
 
-    await sendMessage(
-      env,
-      chatId,
-      "🌐 Public: ON"
-    );
+    // ==================================================
+    // CAPTION NONE
+    // ==================================================
+
+    if (
+      data.startsWith(
+        "caption:none:"
+      )
+    ) {
+
+      const sessionId =
+        data.substring(
+          "caption:none:".length
+        );
 
 
-    await askCaption(
-      env,
-      chatId,
-      sessionId
-    );
+      const session =
+        await setCaption(
+          env,
+          sessionId,
+          null
+        );
 
 
-    return;
-  }
+      if (!session) {
+
+        await answerCallback(
+          env,
+          callbackId,
+          "Sesi tidak ditemukan."
+        );
+
+        return;
+
+      }
 
 
-  // ====================================================
-  // CAPTION NONE
-  // ====================================================
+      await answerCallback(
+        env,
+        callbackId,
+        "Tanpa caption."
+      );
 
-  if (
-    action === "caption" &&
-    value === "none"
-  ) {
 
-    const session =
+      await askDuration(
+        env,
+        chatId,
+        sessionId
+      );
+
+
+      return;
+
+    }
+
+
+    // ==================================================
+    // CAPTION CUSTOM
+    // ==================================================
+
+    if (
+      data.startsWith(
+        "caption:"
+      )
+    ) {
+
+      const parts =
+        data.split(":");
+
+
+      const sessionId =
+        parts.slice(2).join(":");
+
+
       await setCaption(
         env,
         sessionId,
@@ -218,199 +234,288 @@ export async function handleCallback(
       );
 
 
-    if (!session) {
-
-      await sendMessage(
+      await answerCallback(
         env,
-        chatId,
-        "❌ Sesi file tidak ditemukan.\n\nKirim file kembali."
+        callbackId,
+        "Silakan kirim caption."
       );
 
+
       return;
+
     }
 
 
-    await askDuration(
-      env,
-      chatId,
-      sessionId
-    );
+    // ==================================================
+    // DURATION
+    // ==================================================
+
+    if (
+      data.startsWith(
+        "duration:"
+      )
+    ) {
+
+      const parts =
+        data.split(":");
 
 
-    return;
-  }
+      const durationType =
+        parts[1];
+
+      const sessionId =
+        parts.slice(2).join(":");
 
 
-  // ====================================================
-  // DURATION FOREVER
-  // ====================================================
+      // ================================================
+      // CUSTOM
+      // ================================================
 
-  if (
-    action === "duration" &&
-    value === "forever"
-  ) {
+      if (
+        durationType ===
+        "custom"
+      ) {
 
-    await finishWithDuration(
-      env,
-      chatId,
-      sessionId,
-      null
-    );
-
-    return;
-  }
+        const session =
+          await getSession(
+            env,
+            sessionId
+          );
 
 
-  // ====================================================
-  // DURATION 1 DAY
-  // ====================================================
+        if (!session) {
 
-  if (
-    action === "duration" &&
-    value === "1d"
-  ) {
+          await answerCallback(
+            env,
+            callbackId,
+            "Sesi tidak ditemukan."
+          );
 
-    await finishWithDuration(
-      env,
-      chatId,
-      sessionId,
-      1 * 24 * 60 * 60
-    );
+          return;
 
-    return;
-  }
+        }
 
 
-  // ====================================================
-  // DURATION 7 DAYS
-  // ====================================================
+        await telegram(
+          env,
+          "sendMessage",
+          {
 
-  if (
-    action === "duration" &&
-    value === "7d"
-  ) {
+            chat_id:
+              chatId,
 
-    await finishWithDuration(
-      env,
-      chatId,
-      sessionId,
-      7 * 24 * 60 * 60
-    );
+            text:
+              "✏️ Masukkan durasi custom.\n\n" +
+              "Contoh:\n" +
+              "30min\n" +
+              "2h\n" +
+              "1d\n" +
+              "7d\n" +
+              "2w\n" +
+              "1m"
 
-    return;
-  }
-
-
-  // ====================================================
-  // DURATION 30 DAYS
-  // ====================================================
-
-  if (
-    action === "duration" &&
-    value === "30d"
-  ) {
-
-    await finishWithDuration(
-      env,
-      chatId,
-      sessionId,
-      30 * 24 * 60 * 60
-    );
-
-    return;
-  }
+          }
+        );
 
 
-  // ====================================================
-  // CUSTOM
-  // ====================================================
+        // ==============================================
+        // SET STEP CUSTOM
+        // ==============================================
 
-  if (
-    action === "duration" &&
-    value === "custom"
-  ) {
-
-    await sendMessage(
-      env,
-      chatId,
-
-      "✏️ Kirim durasi custom.\n\n" +
-
-      "Contoh:\n" +
-      "• 30min = 30 menit\n" +
-      "• 2h = 2 jam\n" +
-      "• 3d = 3 hari\n" +
-      "• 2w = 2 minggu\n" +
-      "• 1m = 1 bulan\n" +
-      "• forever = selamanya"
-    );
+        const {
+          update
+        } = await import(
+          "../database/supabase.js"
+        );
 
 
-    return;
-  }
+        await update(
+          env,
+          "upload_sessions",
+          `session_id=eq.${encodeURIComponent(
+            sessionId
+          )}`,
+          {
+
+            step:
+              "custom_duration"
+
+          }
+        );
 
 
-  // ====================================================
-  // CALLBACK TIDAK DIKENAL
-  // ====================================================
-
-  await sendMessage(
-    env,
-    chatId,
-    "❌ Pilihan tidak dikenali."
-  );
-
-}
+        await answerCallback(
+          env,
+          callbackId
+        );
 
 
-// ======================================================
-// FINISH DENGAN DURASI
-// ======================================================
+        return;
 
-async function finishWithDuration(
-  env,
-  chatId,
-  sessionId,
-  seconds
-) {
+      }
 
-  try {
 
-    // ================================================
-    // SIMPAN DURASI
-    // ================================================
+      // ================================================
+      // FOREVER
+      // ================================================
 
-    const session =
-      await setDuration(
+      if (
+        durationType ===
+        "forever"
+      ) {
+
+        const session =
+          await setDuration(
+            env,
+            sessionId,
+            null
+          );
+
+
+        if (!session) {
+
+          await answerCallback(
+            env,
+            callbackId,
+            "Sesi tidak ditemukan."
+          );
+
+          return;
+
+        }
+
+
+        // Untuk selamanya, gunakan 0.
+        const {
+          update
+        } = await import(
+          "../database/supabase.js"
+        );
+
+
+        await update(
+          env,
+          "upload_sessions",
+          `session_id=eq.${encodeURIComponent(
+            sessionId
+          )}`,
+          {
+
+            duration_seconds:
+              0,
+
+            step:
+              "finished"
+
+          }
+        );
+
+
+        await answerCallback(
+          env,
+          callbackId,
+          "Selamanya dipilih."
+        );
+
+
+        await finishFile(
+          env,
+          sessionId
+        );
+
+
+        return;
+
+      }
+
+
+      // ================================================
+      // DURASI STANDAR
+      // ================================================
+
+      const durationMap = {
+
+        "1d":
+          86400,
+
+        "7d":
+          604800,
+
+        "30d":
+          2592000
+
+      };
+
+
+      const seconds =
+        durationMap[
+          durationType
+        ];
+
+
+      if (
+        !seconds
+      ) {
+
+        await answerCallback(
+          env,
+          callbackId,
+          "Durasi tidak valid."
+        );
+
+        return;
+
+      }
+
+
+      const session =
+        await setDuration(
+          env,
+          sessionId,
+          seconds
+        );
+
+
+      if (!session) {
+
+        await answerCallback(
+          env,
+          callbackId,
+          "Sesi tidak ditemukan."
+        );
+
+        return;
+
+      }
+
+
+      await answerCallback(
         env,
-        sessionId,
-        seconds
+        callbackId,
+        "Durasi dipilih."
       );
 
 
-    if (!session) {
-
-      await sendMessage(
+      await finishFile(
         env,
-        chatId,
-
-        "❌ Sesi file tidak ditemukan.\n\n" +
-        "Kirim file kembali."
+        sessionId
       );
+
 
       return;
+
     }
 
 
-    // ================================================
-    // BUAT LINK
-    // ================================================
+    // ==================================================
+    // CALLBACK TIDAK DIKENAL
+    // ==================================================
 
-    await finishFile(
+    await answerCallback(
       env,
-      sessionId
+      callbackId,
+      "Pilihan tidak dikenali."
     );
-
 
   } catch (error) {
 
@@ -420,13 +525,15 @@ async function finishWithDuration(
     );
 
 
-    await sendMessage(
-      env,
-      chatId,
+    try {
 
-      "❌ Gagal membuat link.\n\n" +
-      "Silakan coba lagi."
-    );
+      await answerCallback(
+        env,
+        callback?.id,
+        "❌ Terjadi kesalahan."
+      );
+
+    } catch {}
 
   }
 
