@@ -3,13 +3,15 @@
 // ======================================================
 
 import {
-  telegram,
-  sendMessage
+  sendMessage,
+  telegram
 } from "../services/telegram.js";
 
 import {
   insert,
-  selectOne
+  selectOne,
+  update,
+  remove
 } from "../database/supabase.js";
 
 import {
@@ -27,172 +29,56 @@ import {
 
 
 // ======================================================
-// USER STATE
-// ======================================================
-//
-// Tidak menggunakan pending_uploads.
-//
-// User bisa mengirim file berkali-kali.
-// Setiap user mempunyai state proses sendiri.
-//
+// SESSION ID
 // ======================================================
 
-const states = new Map();
+function createSessionId() {
+
+  return (
+    crypto.randomUUID() +
+    "-" +
+    Date.now().toString(36)
+  );
+
+}
 
 
 // ======================================================
-// START
+// GET SESSION
 // ======================================================
 
-export async function handleStart(
-  message,
-  env
+export async function getUserState(
+  env,
+  userId
 ) {
 
-  const parts =
-    String(
-      message.text || ""
-    )
-      .trim()
-      .split(/\s+/);
+  return selectOne(
+    env,
+    "upload_sessions",
+    `telegram_id=eq.${encodeURIComponent(
+      userId
+    )}&order=created_at.desc&limit=1`
+  );
+
+}
 
 
-  const token =
-    parts[1];
+// ======================================================
+// GET SESSION BY ID
+// ======================================================
 
+export async function getSession(
+  env,
+  sessionId
+) {
 
-  // ====================================================
-  // START BIASA
-  // ====================================================
-
-  if (!token) {
-
-    await sendMessage(
-      env,
-      message.chat.id,
-
-      "👋 Selamat datang di DONASI FILE!\n\n" +
-      "📤 Kirim file untuk membuat link."
-    );
-
-    return;
-
-  }
-
-
-  // ====================================================
-  // START DENGAN TOKEN
-  // ====================================================
-
-  const file =
-    await selectOne(
-      env,
-      "files",
-      `token=eq.${encodeURIComponent(token)}&select=*`
-    );
-
-
-  if (!file) {
-
-    await sendMessage(
-      env,
-      message.chat.id,
-
-      "❌ Link file tidak ditemukan."
-    );
-
-    return;
-
-  }
-
-
-  // ====================================================
-  // STATUS
-  // ====================================================
-
-  if (
-    file.status !== "active"
-  ) {
-
-    await sendMessage(
-      env,
-      message.chat.id,
-
-      "❌ Link file sudah tidak aktif."
-    );
-
-    return;
-
-  }
-
-
-  // ====================================================
-  // EXPIRY
-  // ====================================================
-
-  if (
-    file.expires_at &&
-    new Date(
-      file.expires_at
-    ) <= new Date()
-  ) {
-
-    await sendMessage(
-      env,
-      message.chat.id,
-
-      "❌ Link file sudah kedaluwarsa."
-    );
-
-    return;
-
-  }
-
-
-  // ====================================================
-  // KIRIM FILE
-  // ====================================================
-
-  const sent =
-    await sendFile(
-      env,
-      message.chat.id,
-      file
-    );
-
-
-  // ====================================================
-  // CATAT DELIVERY
-  // ====================================================
-
-  try {
-
-    await insert(
-      env,
-      "deliveries",
-      {
-
-        file_id:
-          file.id,
-
-        telegram_chat_id:
-          message.chat.id,
-
-        telegram_message_id:
-          sent.message_id
-
-      },
-      false
-    );
-
-  } catch (error) {
-
-    console.error(
-      "DELIVERY INSERT ERROR:",
-      error
-    );
-
-  }
+  return selectOne(
+    env,
+    "upload_sessions",
+    `session_id=eq.${encodeURIComponent(
+      sessionId
+    )}&limit=1`
+  );
 
 }
 
@@ -213,13 +99,8 @@ export async function handleMedia(
     message.chat?.id;
 
 
-  if (
-    !userId ||
-    !chatId
-  ) {
-
+  if (!userId || !chatId) {
     return;
-
   }
 
 
@@ -228,19 +109,25 @@ export async function handleMedia(
 
 
   if (!media) {
-
     return;
-
   }
 
 
+  const sessionId =
+    createSessionId();
+
+
   // ====================================================
-  // SIMPAN STATE
+  // SIMPAN SESSION
   // ====================================================
 
-  states.set(
-    String(userId),
+  await insert(
+    env,
+    "upload_sessions",
     {
+
+      session_id:
+        sessionId,
 
       telegram_id:
         userId,
@@ -258,13 +145,16 @@ export async function handleMedia(
         media.fileId,
 
       file_name:
-        media.fileName,
+        media.fileName ||
+        null,
 
       mime_type:
-        media.mimeType,
+        media.mimeType ||
+        null,
 
       file_size:
-        media.fileSize,
+        media.fileSize ||
+        null,
 
       caption_user:
         message.caption ||
@@ -276,7 +166,8 @@ export async function handleMedia(
       duration_seconds:
         null
 
-    }
+    },
+    false
   );
 
 
@@ -304,7 +195,7 @@ export async function handleMedia(
                 "🔒 Protect Content",
 
               callback_data:
-                "protect:on"
+                `protect:on:${sessionId}`
             },
 
             {
@@ -312,7 +203,7 @@ export async function handleMedia(
                 "🌐 Public",
 
               callback_data:
-                "protect:off"
+                `protect:off:${sessionId}`
             }
 
           ]
@@ -328,159 +219,46 @@ export async function handleMedia(
 
 
 // ======================================================
-// HANDLE TEXT
-// ======================================================
-
-export async function handleText(
-  message,
-  env
-) {
-
-  const userId =
-    message.from?.id;
-
-  const chatId =
-    message.chat?.id;
-
-
-  if (
-    !userId ||
-    !chatId
-  ) {
-
-    return;
-
-  }
-
-
-  const state =
-    getUserState(
-      userId
-    );
-
-
-  // ====================================================
-  // TIDAK ADA STATE
-  // ====================================================
-
-  if (!state) {
-
-    await sendMessage(
-      env,
-      chatId,
-
-      "📤 Kirim file terlebih dahulu."
-    );
-
-    return;
-
-  }
-
-
-  // ====================================================
-  // CUSTOM DURASI
-  // ====================================================
-
-  const duration =
-    parseDuration(
-      message.text
-    );
-
-
-  if (!duration) {
-
-    await sendMessage(
-      env,
-      chatId,
-
-      "❌ Format durasi tidak valid.\n\n" +
-
-      "Contoh:\n" +
-      "• forever\n" +
-      "• 1h\n" +
-      "• 1d\n" +
-      "• 7d\n" +
-      "• 30d\n" +
-      "• 2w\n" +
-      "• 1m"
-    );
-
-    return;
-
-  }
-
-
-  state.duration_seconds =
-    duration.seconds;
-
-
-  // ====================================================
-  // SELESAIKAN FILE
-  // ====================================================
-
-  try {
-
-    await finishFile(
-      env,
-      userId,
-      chatId,
-      state
-    );
-
-
-    states.delete(
-      String(userId)
-    );
-
-
-  } catch (error) {
-
-    console.error(
-      "FINISH FILE ERROR:",
-      error
-    );
-
-
-    await sendMessage(
-      env,
-      chatId,
-
-      "❌ Gagal membuat link.\n\n" +
-      "Silakan coba lagi."
-    );
-
-  }
-
-}
-
-
-// ======================================================
 // SET PROTECT
 // ======================================================
 
-export function setProtect(
-  userId,
+export async function setProtect(
+  env,
+  sessionId,
   value
 ) {
 
-  const state =
-    getUserState(
-      userId
+  const session =
+    await getSession(
+      env,
+      sessionId
     );
 
 
-  if (!state) {
-
-    return false;
-
+  if (!session) {
+    return null;
   }
 
 
-  state.protect_content =
-    Boolean(value);
+  await update(
+    env,
+    "upload_sessions",
+    `session_id=eq.${encodeURIComponent(
+      sessionId
+    )}`,
+    {
+
+      protect_content:
+        Boolean(value)
+
+    }
+  );
 
 
-  return true;
+  return getSession(
+    env,
+    sessionId
+  );
 
 }
 
@@ -491,7 +269,8 @@ export function setProtect(
 
 export async function askCaption(
   env,
-  chatId
+  chatId,
+  sessionId
 ) {
 
   await sendMessage(
@@ -514,7 +293,7 @@ export async function askCaption(
                 "➡️ Tanpa Caption",
 
               callback_data:
-                "caption:none"
+                `caption:none:${sessionId}`
             }
 
           ]
@@ -533,29 +312,43 @@ export async function askCaption(
 // SET CAPTION
 // ======================================================
 
-export function setCaption(
-  userId,
+export async function setCaption(
+  env,
+  sessionId,
   caption
 ) {
 
-  const state =
-    getUserState(
-      userId
+  const session =
+    await getSession(
+      env,
+      sessionId
     );
 
 
-  if (!state) {
-
-    return false;
-
+  if (!session) {
+    return null;
   }
 
 
-  state.caption_user =
-    caption || null;
+  await update(
+    env,
+    "upload_sessions",
+    `session_id=eq.${encodeURIComponent(
+      sessionId
+    )}`,
+    {
+
+      caption_user:
+        caption || null
+
+    }
+  );
 
 
-  return true;
+  return getSession(
+    env,
+    sessionId
+  );
 
 }
 
@@ -566,7 +359,8 @@ export function setCaption(
 
 export async function askDuration(
   env,
-  chatId
+  chatId,
+  sessionId
 ) {
 
   await sendMessage(
@@ -588,7 +382,7 @@ export async function askDuration(
                 "♾ Selamanya",
 
               callback_data:
-                "duration:forever"
+                `duration:forever:${sessionId}`
             }
 
           ],
@@ -600,7 +394,7 @@ export async function askDuration(
                 "1 Hari",
 
               callback_data:
-                "duration:1d"
+                `duration:1d:${sessionId}`
             },
 
             {
@@ -608,7 +402,7 @@ export async function askDuration(
                 "7 Hari",
 
               callback_data:
-                "duration:7d"
+                `duration:7d:${sessionId}`
             }
 
           ],
@@ -620,7 +414,7 @@ export async function askDuration(
                 "30 Hari",
 
               callback_data:
-                "duration:30d"
+                `duration:30d:${sessionId}`
             },
 
             {
@@ -628,7 +422,7 @@ export async function askDuration(
                 "✏️ Custom",
 
               callback_data:
-                "duration:custom"
+                `duration:custom:${sessionId}`
             }
 
           ]
@@ -647,58 +441,42 @@ export async function askDuration(
 // SET DURATION
 // ======================================================
 
-export function setDuration(
-  userId,
+export async function setDuration(
+  env,
+  sessionId,
   seconds
 ) {
 
-  const state =
-    getUserState(
-      userId
+  const session =
+    await getSession(
+      env,
+      sessionId
     );
 
 
-  if (!state) {
-
-    return false;
-
+  if (!session) {
+    return null;
   }
 
 
-  state.duration_seconds =
-    seconds;
+  await update(
+    env,
+    "upload_sessions",
+    `session_id=eq.${encodeURIComponent(
+      sessionId
+    )}`,
+    {
+
+      duration_seconds:
+        seconds
+
+    }
+  );
 
 
-  return true;
-
-}
-
-
-// ======================================================
-// GET USER STATE
-// ======================================================
-
-export function getUserState(
-  userId
-) {
-
-  return states.get(
-    String(userId)
-  ) || null;
-
-}
-
-
-// ======================================================
-// DELETE USER STATE
-// ======================================================
-
-export function clearUserState(
-  userId
-) {
-
-  states.delete(
-    String(userId)
+  return getSession(
+    env,
+    sessionId
   );
 
 }
@@ -708,10 +486,9 @@ export function clearUserState(
 // CREATE FILE
 // ======================================================
 
-export async function createFileFromState(
+export async function createFileFromSession(
   env,
-  userId,
-  state
+  session
 ) {
 
   const token =
@@ -719,10 +496,10 @@ export async function createFileFromState(
 
 
   const seconds =
-    state.duration_seconds == null
+    session.duration_seconds == null
       ? null
       : Number(
-          state.duration_seconds
+          session.duration_seconds
         );
 
 
@@ -754,39 +531,39 @@ export async function createFileFromState(
         token,
 
         owner_telegram_id:
-          userId,
+          session.telegram_id,
 
         source_chat_id:
-          state.source_chat_id,
+          session.source_chat_id,
 
         source_message_id:
-          state.source_message_id,
+          session.source_message_id,
 
         media_type:
-          state.media_type,
+          session.media_type,
 
         telegram_file_id:
-          state.telegram_file_id,
+          session.telegram_file_id,
 
         file_name:
-          state.file_name ||
+          session.file_name ||
           null,
 
         mime_type:
-          state.mime_type ||
+          session.mime_type ||
           null,
 
         file_size:
-          state.file_size ||
+          session.file_size ||
           null,
 
         caption_user:
-          state.caption_user ||
+          session.caption_user ||
           null,
 
         protect_content:
           Boolean(
-            state.protect_content
+            session.protect_content
           ),
 
         duration_seconds:
@@ -828,16 +605,41 @@ export async function createFileFromState(
 
 export async function finishFile(
   env,
-  userId,
-  chatId,
-  state
+  sessionId
 ) {
 
-  const file =
-    await createFileFromState(
+  const session =
+    await getSession(
       env,
-      userId,
-      state
+      sessionId
+    );
+
+
+  if (!session) {
+
+    throw new Error(
+      "Sesi file tidak ditemukan."
+    );
+
+  }
+
+
+  if (
+    session.duration_seconds === undefined ||
+    session.duration_seconds === null
+  ) {
+
+    throw new Error(
+      "Durasi file belum dipilih."
+    );
+
+  }
+
+
+  const file =
+    await createFileFromSession(
+      env,
+      session
     );
 
 
@@ -845,11 +647,10 @@ export async function finishFile(
     String(
       env.TELEGRAM_BOT_USERNAME ||
       ""
-    )
-      .replace(
-        /^@/,
-        ""
-      );
+    ).replace(
+      /^@/,
+      ""
+    );
 
 
   if (!botUsername) {
@@ -862,12 +663,14 @@ export async function finishFile(
 
 
   const link =
-    `https://t.me/${botUsername}?start=${encodeURIComponent(file.token)}`;
+    `https://t.me/${botUsername}?start=${encodeURIComponent(
+      file.token
+    )}`;
 
 
   await sendMessage(
     env,
-    chatId,
+    session.source_chat_id,
 
     "✅ LINK BERHASIL DIBUAT!\n\n" +
 
@@ -881,6 +684,19 @@ export async function finishFile(
   );
 
 
+  // ====================================================
+  // SESSION BOLEH DIHAPUS SETELAH FILE BERHASIL DIBUAT
+  // ====================================================
+
+  await remove(
+    env,
+    "upload_sessions",
+    `session_id=eq.${encodeURIComponent(
+      sessionId
+    )}`
+  );
+
+
   return {
     file,
     link
@@ -890,10 +706,65 @@ export async function finishFile(
 
 
 // ======================================================
+// HANDLE CUSTOM DURATION TEXT
+// ======================================================
+
+export async function handleDurationText(
+  message,
+  env,
+  sessionId
+) {
+
+  const duration =
+    parseDuration(
+      message.text
+    );
+
+
+  if (!duration) {
+
+    await sendMessage(
+      env,
+      message.chat.id,
+
+      "❌ Format durasi tidak valid.\n\n" +
+
+      "Contoh:\n" +
+      "1d\n" +
+      "7d\n" +
+      "30d\n" +
+      "2h\n" +
+      "2w\n" +
+      "1m\n" +
+      "30min\n" +
+      "forever"
+    );
+
+    return;
+
+  }
+
+
+  await setDuration(
+    env,
+    sessionId,
+    duration.seconds
+  );
+
+
+  await finishFile(
+    env,
+    sessionId
+  );
+
+}
+
+
+// ======================================================
 // SEND FILE
 // ======================================================
 
-async function sendFile(
+export async function sendFile(
   env,
   chatId,
   file
@@ -916,11 +787,6 @@ async function sendFile(
     file.media_type
   ) {
 
-
-    // ================================================
-    // PHOTO
-    // ================================================
-
     case "photo":
 
       return telegram(
@@ -940,10 +806,6 @@ async function sendFile(
         }
       );
 
-
-    // ================================================
-    // VIDEO
-    // ================================================
 
     case "video":
 
@@ -965,10 +827,6 @@ async function sendFile(
       );
 
 
-    // ================================================
-    // AUDIO
-    // ================================================
-
     case "audio":
 
       return telegram(
@@ -988,10 +846,6 @@ async function sendFile(
         }
       );
 
-
-    // ================================================
-    // VOICE
-    // ================================================
 
     case "voice":
 
@@ -1013,10 +867,6 @@ async function sendFile(
       );
 
 
-    // ================================================
-    // ANIMATION
-    // ================================================
-
     case "animation":
 
       return telegram(
@@ -1037,10 +887,6 @@ async function sendFile(
       );
 
 
-    // ================================================
-    // VIDEO NOTE
-    // ================================================
-
     case "video_note":
 
       return telegram(
@@ -1057,10 +903,6 @@ async function sendFile(
       );
 
 
-    // ================================================
-    // STICKER
-    // ================================================
-
     case "sticker":
 
       return telegram(
@@ -1076,10 +918,6 @@ async function sendFile(
         }
       );
 
-
-    // ================================================
-    // DOCUMENT
-    // ================================================
 
     case "document":
 
