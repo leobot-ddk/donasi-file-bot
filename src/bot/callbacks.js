@@ -13,12 +13,13 @@ import {
   askDuration,
   setCaption,
   setDuration,
-  finishFile
+  finishFile,
+  getSession
 } from "./user.js";
 
 
 // ======================================================
-// STATE CALLBACK
+// CALLBACK HANDLER
 // ======================================================
 
 export async function handleCallback(
@@ -55,11 +56,8 @@ export async function handleCallback(
     ).catch(() => {});
 
     return;
-
   }
 
-
-  // Tutup loading tombol
 
   await answerCallbackQuery(
     env,
@@ -68,94 +66,101 @@ export async function handleCallback(
 
 
   // ====================================================
-  // PROTECT
+  // PROTECT / PUBLIC
   // ====================================================
 
   if (
-    data === "protect:on"
+    data.startsWith("protect:")
   ) {
 
-    const ok =
-      setProtect(
-        userId,
-        true
-      );
+    const parts =
+      data.split(":");
+
+    const mode =
+      parts[1];
+
+    const sessionId =
+      parts.slice(2).join(":");
 
 
-    if (!ok) {
+    if (
+      !sessionId ||
+      (
+        mode !== "on" &&
+        mode !== "off"
+      )
+    ) {
 
       await sendMessage(
         env,
         chatId,
-        "❌ Sesi file tidak ditemukan.\n\nKirim file kembali."
+        "❌ Data sesi tidak valid."
       );
 
       return;
-
     }
+
+
+    const session =
+      await getSession(
+        env,
+        sessionId
+      );
+
+
+    if (!session) {
+
+      await sendMessage(
+        env,
+        chatId,
+        "❌ Sesi file tidak ditemukan.\n\n" +
+        "Kirim file kembali."
+      );
+
+      return;
+    }
+
+
+    if (
+      Number(session.telegram_id) !==
+      Number(userId)
+    ) {
+
+      await sendMessage(
+        env,
+        chatId,
+        "❌ Sesi ini bukan milik Anda."
+      );
+
+      return;
+    }
+
+
+    await setProtect(
+      env,
+      sessionId,
+      mode === "on"
+    );
 
 
     await sendMessage(
       env,
       chatId,
-      "🔒 Protect Content: ON"
+
+      mode === "on"
+        ? "🔒 Protect Content: ON"
+        : "🌐 Public: ON"
     );
 
 
     await askCaption(
-      env,
-      chatId
-    );
-
-
-    return;
-
-  }
-
-
-  // ====================================================
-  // PUBLIC
-  // ====================================================
-
-  if (
-    data === "protect:off"
-  ) {
-
-    const ok =
-      setProtect(
-        userId,
-        false
-      );
-
-
-    if (!ok) {
-
-      await sendMessage(
-        env,
-        chatId,
-        "❌ Sesi file tidak ditemukan.\n\nKirim file kembali."
-      );
-
-      return;
-
-    }
-
-
-    await sendMessage(
       env,
       chatId,
-      "🌐 Public: ON"
-    );
-
-
-    await askCaption(
-      env,
-      chatId
+      sessionId
     );
 
 
     return;
-
   }
 
 
@@ -164,260 +169,274 @@ export async function handleCallback(
   // ====================================================
 
   if (
-    data === "caption:none"
+    data.startsWith("caption:none:")
   ) {
 
-    const ok =
-      setCaption(
-        userId,
-        null
+    const sessionId =
+      data.substring(
+        "caption:none:".length
       );
 
 
-    if (!ok) {
+    if (!sessionId) {
 
       await sendMessage(
         env,
         chatId,
-        "❌ Sesi file tidak ditemukan.\n\nKirim file kembali."
+        "❌ Data sesi tidak valid."
       );
 
       return;
-
     }
+
+
+    const session =
+      await getSession(
+        env,
+        sessionId
+      );
+
+
+    if (!session) {
+
+      await sendMessage(
+        env,
+        chatId,
+        "❌ Sesi file tidak ditemukan.\n\n" +
+        "Kirim file kembali."
+      );
+
+      return;
+    }
+
+
+    if (
+      Number(session.telegram_id) !==
+      Number(userId)
+    ) {
+
+      await sendMessage(
+        env,
+        chatId,
+        "❌ Sesi ini bukan milik Anda."
+      );
+
+      return;
+    }
+
+
+    await setCaption(
+      env,
+      sessionId,
+      null
+    );
 
 
     await askDuration(
       env,
-      chatId
+      chatId,
+      sessionId
     );
 
 
     return;
-
   }
 
 
   // ====================================================
-  // DURASI SELAMANYA
+  // DURASI
   // ====================================================
 
   if (
-    data === "duration:forever"
+    data.startsWith("duration:")
   ) {
 
-    await finishWithDuration(
-      env,
-      userId,
-      chatId,
-      null
-    );
+    const parts =
+      data.split(":");
 
-    return;
+    const type =
+      parts[1];
 
-  }
+    const sessionId =
+      parts.slice(2).join(":");
 
 
-  // ====================================================
-  // DURASI PRESET
-  // ====================================================
-
-  if (
-    data === "duration:1d"
-  ) {
-
-    await finishWithDuration(
-      env,
-      userId,
-      chatId,
-      1 * 24 * 60 * 60
-    );
-
-    return;
-
-  }
-
-
-  if (
-    data === "duration:7d"
-  ) {
-
-    await finishWithDuration(
-      env,
-      userId,
-      chatId,
-      7 * 24 * 60 * 60
-    );
-
-    return;
-
-  }
-
-
-  if (
-    data === "duration:30d"
-  ) {
-
-    await finishWithDuration(
-      env,
-      userId,
-      chatId,
-      30 * 24 * 60 * 60
-    );
-
-    return;
-
-  }
-
-
-  // ====================================================
-  // CUSTOM
-  // ====================================================
-
-  if (
-    data === "duration:custom"
-  ) {
-
-    await sendMessage(
-      env,
-      chatId,
-
-      "✏️ Kirim durasi custom.\n\n" +
-
-      "Contoh:\n" +
-      "• 30min = 30 menit\n" +
-      "• 2h = 2 jam\n" +
-      "• 3d = 3 hari\n" +
-      "• 2w = 2 minggu\n" +
-      "• 1m = 1 bulan\n" +
-      "• forever = selamanya"
-    );
-
-
-    return;
-
-  }
-
-}
-
-
-// ======================================================
-// FINISH DENGAN DURASI
-// ======================================================
-
-async function finishWithDuration(
-  env,
-  userId,
-  chatId,
-  seconds
-) {
-
-  try {
-
-    const ok =
-      setDuration(
-        userId,
-        seconds
-      );
-
-
-    if (!ok) {
+    if (!sessionId) {
 
       await sendMessage(
         env,
         chatId,
+        "❌ Data sesi tidak valid."
+      );
 
+      return;
+    }
+
+
+    const session =
+      await getSession(
+        env,
+        sessionId
+      );
+
+
+    if (!session) {
+
+      await sendMessage(
+        env,
+        chatId,
         "❌ Sesi file tidak ditemukan.\n\n" +
         "Kirim file kembali."
       );
 
       return;
-
     }
 
 
-    // Ambil state internal dari user.js
-    //
-    // finishFile membutuhkan state.
-    // Fungsi berikut mengambil state tersebut.
+    if (
+      Number(session.telegram_id) !==
+      Number(userId)
+    ) {
 
-    const state =
-      await getUserState(
-        userId
+      await sendMessage(
+        env,
+        chatId,
+        "❌ Sesi ini bukan milik Anda."
       );
 
+      return;
+    }
 
-    if (!state) {
+
+    // ================================================
+    // CUSTOM
+    // ================================================
+
+    if (
+      type === "custom"
+    ) {
 
       await sendMessage(
         env,
         chatId,
 
-        "❌ Sesi file tidak ditemukan.\n\n" +
-        "Kirim file kembali."
+        "✏️ Kirim durasi custom.\n\n" +
+
+        "Contoh:\n" +
+        "30min = 30 menit\n" +
+        "2h = 2 jam\n" +
+        "3d = 3 hari\n" +
+        "2w = 2 minggu\n" +
+        "1m = 1 bulan\n" +
+        "forever = selamanya"
+      );
+
+
+      // Custom akan diproses oleh router
+      // menggunakan sessionId dari sesi terbaru user.
+
+      return;
+    }
+
+
+    // ================================================
+    // SELAMANYA
+    // ================================================
+
+    if (
+      type === "forever"
+    ) {
+
+      await setDuration(
+        env,
+        sessionId,
+        null
+      );
+
+
+      await finishFile(
+        env,
+        sessionId
+      );
+
+
+      return;
+    }
+
+
+    // ================================================
+    // PRESET
+    // ================================================
+
+    let seconds =
+      null;
+
+
+    if (
+      type === "1d"
+    ) {
+
+      seconds =
+        1 *
+        24 *
+        60 *
+        60;
+
+    }
+
+
+    else if (
+      type === "7d"
+    ) {
+
+      seconds =
+        7 *
+        24 *
+        60 *
+        60;
+
+    }
+
+
+    else if (
+      type === "30d"
+    ) {
+
+      seconds =
+        30 *
+        24 *
+        60 *
+        60;
+
+    }
+
+
+    else {
+
+      await sendMessage(
+        env,
+        chatId,
+        "❌ Durasi tidak dikenali."
       );
 
       return;
-
     }
+
+
+    await setDuration(
+      env,
+      sessionId,
+      seconds
+    );
 
 
     await finishFile(
       env,
-      userId,
-      chatId,
-      state
+      sessionId
     );
 
 
-  } catch (error) {
-
-    console.error(
-      "FINISH CALLBACK ERROR:",
-      error
-    );
-
-
-    await sendMessage(
-      env,
-      chatId,
-
-      "❌ Gagal membuat link.\n\n" +
-      "Silakan coba lagi."
-    );
-
+    return;
   }
-
-}
-
-
-// ======================================================
-// AMBIL STATE USER
-// ======================================================
-//
-// user.js menyediakan fungsi ini.
-// ======================================================
-
-async function getUserState(
-  userId
-) {
-
-  const module =
-    await import("./user.js");
-
-  if (
-    typeof module.getUserState !==
-    "function"
-  ) {
-
-    throw new Error(
-      "getUserState belum tersedia di user.js"
-    );
-
-  }
-
-  return module.getUserState(
-    userId
-  );
 
 }
