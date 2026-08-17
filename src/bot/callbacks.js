@@ -16,6 +16,10 @@ import {
   finishFile
 } from "./user.js";
 
+import {
+  update
+} from "../database/supabase.js";
+
 
 // ======================================================
 // ANSWER CALLBACK
@@ -27,13 +31,16 @@ async function answerCallback(
   text = ""
 ) {
 
+  if (!callbackId) {
+    return;
+  }
+
   try {
 
     await telegram(
       env,
       "answerCallbackQuery",
       {
-
         callback_query_id:
           callbackId,
 
@@ -41,7 +48,6 @@ async function answerCallback(
 
         show_alert:
           false
-
       }
     );
 
@@ -53,6 +59,30 @@ async function answerCallback(
     );
 
   }
+
+}
+
+
+// ======================================================
+// SET STEP
+// ======================================================
+
+async function setStep(
+  env,
+  sessionId,
+  step
+) {
+
+  return update(
+    env,
+    "upload_sessions",
+    `session_id=eq.${encodeURIComponent(
+      sessionId
+    )}`,
+    {
+      step
+    }
+  );
 
 }
 
@@ -87,25 +117,21 @@ export async function handleCallback(
 
 
     // ==================================================
-    // PROTECT
+    // PROTECT / PUBLIC
     // ==================================================
 
     if (
-      data.startsWith(
-        "protect:"
-      )
+      data.startsWith("protect:")
     ) {
 
       const parts =
         data.split(":");
-
 
       const value =
         parts[1];
 
       const sessionId =
         parts.slice(2).join(":");
-
 
       const protect =
         value === "on";
@@ -132,6 +158,13 @@ export async function handleCallback(
       }
 
 
+      await setStep(
+        env,
+        sessionId,
+        "caption"
+      );
+
+
       await answerCallback(
         env,
         callbackId,
@@ -154,7 +187,7 @@ export async function handleCallback(
 
 
     // ==================================================
-    // CAPTION NONE
+    // TANPA CAPTION
     // ==================================================
 
     if (
@@ -190,6 +223,13 @@ export async function handleCallback(
       }
 
 
+      await setStep(
+        env,
+        sessionId,
+        "duration"
+      );
+
+
       await answerCallback(
         env,
         callbackId,
@@ -210,27 +250,44 @@ export async function handleCallback(
 
 
     // ==================================================
-    // CAPTION CUSTOM
+    // CAPTION BUTTON
     // ==================================================
 
     if (
-      data.startsWith(
-        "caption:"
-      )
+      data.startsWith("caption:")
     ) {
 
       const parts =
         data.split(":");
 
-
       const sessionId =
         parts.slice(2).join(":");
 
 
-      await setCaption(
+      const session =
+        await getSession(
+          env,
+          sessionId
+        );
+
+
+      if (!session) {
+
+        await answerCallback(
+          env,
+          callbackId,
+          "Sesi tidak ditemukan."
+        );
+
+        return;
+
+      }
+
+
+      await setStep(
         env,
         sessionId,
-        null
+        "caption"
       );
 
 
@@ -238,6 +295,21 @@ export async function handleCallback(
         env,
         callbackId,
         "Silakan kirim caption."
+      );
+
+
+      await telegram(
+        env,
+        "sendMessage",
+        {
+
+          chat_id:
+            chatId,
+
+          text:
+            "📝 Silakan kirim caption sekarang."
+
+        }
       );
 
 
@@ -251,14 +323,11 @@ export async function handleCallback(
     // ==================================================
 
     if (
-      data.startsWith(
-        "duration:"
-      )
+      data.startsWith("duration:")
     ) {
 
       const parts =
         data.split(":");
-
 
       const durationType =
         parts[1];
@@ -267,33 +336,45 @@ export async function handleCallback(
         parts.slice(2).join(":");
 
 
+      const session =
+        await getSession(
+          env,
+          sessionId
+        );
+
+
+      if (!session) {
+
+        await answerCallback(
+          env,
+          callbackId,
+          "Sesi tidak ditemukan."
+        );
+
+        return;
+
+      }
+
+
       // ================================================
       // CUSTOM
       // ================================================
 
       if (
-        durationType ===
-        "custom"
+        durationType === "custom"
       ) {
 
-        const session =
-          await getSession(
-            env,
-            sessionId
-          );
+        await setStep(
+          env,
+          sessionId,
+          "custom_duration"
+        );
 
 
-        if (!session) {
-
-          await answerCallback(
-            env,
-            callbackId,
-            "Sesi tidak ditemukan."
-          );
-
-          return;
-
-        }
+        await answerCallback(
+          env,
+          callbackId
+        );
 
 
         await telegram(
@@ -312,41 +393,10 @@ export async function handleCallback(
               "1d\n" +
               "7d\n" +
               "2w\n" +
-              "1m"
+              "1m\n" +
+              "forever"
 
           }
-        );
-
-
-        // ==============================================
-        // SET STEP CUSTOM
-        // ==============================================
-
-        const {
-          update
-        } = await import(
-          "../database/supabase.js"
-        );
-
-
-        await update(
-          env,
-          "upload_sessions",
-          `session_id=eq.${encodeURIComponent(
-            sessionId
-          )}`,
-          {
-
-            step:
-              "custom_duration"
-
-          }
-        );
-
-
-        await answerCallback(
-          env,
-          callbackId
         );
 
 
@@ -360,54 +410,20 @@ export async function handleCallback(
       // ================================================
 
       if (
-        durationType ===
-        "forever"
+        durationType === "forever"
       ) {
 
-        const session =
-          await setDuration(
-            env,
-            sessionId,
-            null
-          );
-
-
-        if (!session) {
-
-          await answerCallback(
-            env,
-            callbackId,
-            "Sesi tidak ditemukan."
-          );
-
-          return;
-
-        }
-
-
-        // Untuk selamanya, gunakan 0.
-        const {
-          update
-        } = await import(
-          "../database/supabase.js"
+        await setDuration(
+          env,
+          sessionId,
+          0
         );
 
 
-        await update(
+        await setStep(
           env,
-          "upload_sessions",
-          `session_id=eq.${encodeURIComponent(
-            sessionId
-          )}`,
-          {
-
-            duration_seconds:
-              0,
-
-            step:
-              "finished"
-
-          }
+          sessionId,
+          "finished"
         );
 
 
@@ -453,9 +469,7 @@ export async function handleCallback(
         ];
 
 
-      if (
-        !seconds
-      ) {
+      if (!seconds) {
 
         await answerCallback(
           env,
@@ -468,25 +482,18 @@ export async function handleCallback(
       }
 
 
-      const session =
-        await setDuration(
-          env,
-          sessionId,
-          seconds
-        );
+      await setDuration(
+        env,
+        sessionId,
+        seconds
+      );
 
 
-      if (!session) {
-
-        await answerCallback(
-          env,
-          callbackId,
-          "Sesi tidak ditemukan."
-        );
-
-        return;
-
-      }
+      await setStep(
+        env,
+        sessionId,
+        "finished"
+      );
 
 
       await answerCallback(
@@ -520,7 +527,7 @@ export async function handleCallback(
   } catch (error) {
 
     console.error(
-      "FINISH CALLBACK ERROR:",
+      "CALLBACK ERROR:",
       error
     );
 
