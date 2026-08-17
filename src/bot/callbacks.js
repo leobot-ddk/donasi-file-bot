@@ -1,5 +1,6 @@
 // ======================================================
 // CALLBACK HANDLER
+// DONASI FILE BOT
 // ======================================================
 
 import {
@@ -19,6 +20,25 @@ import {
 import {
   update
 } from "../database/supabase.js";
+
+import {
+  isAdmin
+} from "../config.js";
+
+import {
+  showAdminPanel,
+  showDashboard,
+  showFiles,
+  showFileDetail,
+  disableFile,
+  showUsers,
+  blockUser,
+  unblockUser,
+  showCaptionMenu,
+  startAddCaption,
+  deleteCaption,
+  showAdmins
+} from "./admin.js";
 
 
 // ======================================================
@@ -88,6 +108,399 @@ async function setStep(
 
 
 // ======================================================
+// ADMIN CALLBACK
+// ======================================================
+
+async function handleAdminCallback(
+  callback,
+  env
+) {
+
+  const data =
+    callback?.data;
+
+  const callbackId =
+    callback?.id;
+
+  const message =
+    callback?.message;
+
+  const chatId =
+    message?.chat?.id;
+
+  const userId =
+    callback?.from?.id;
+
+
+  // ====================================================
+  // SECURITY
+  // ====================================================
+
+  if (
+    !isAdmin(
+      userId,
+      env
+    )
+  ) {
+
+    await answerCallback(
+      env,
+      callbackId,
+      "❌ Akses ditolak."
+    );
+
+    return true;
+
+  }
+
+
+  // ====================================================
+  // ADMIN PANEL
+  // ====================================================
+
+  if (
+    data === "admin:panel"
+  ) {
+
+    await answerCallback(
+      env,
+      callbackId
+    );
+
+    await showAdminPanel(
+      env,
+      chatId
+    );
+
+    return true;
+
+  }
+
+
+  // ====================================================
+  // DASHBOARD
+  // ====================================================
+
+  if (
+    data === "admin:dashboard"
+  ) {
+
+    await answerCallback(
+      env,
+      callbackId,
+      "Memuat dashboard..."
+    );
+
+    await showDashboard(
+      env,
+      chatId
+    );
+
+    return true;
+
+  }
+
+
+  // ====================================================
+  // FILE LIST
+  // ====================================================
+
+  if (
+    data === "admin:files" ||
+    data === "admin:delete"
+  ) {
+
+    await answerCallback(
+      env,
+      callbackId,
+      "Memuat file..."
+    );
+
+    await showFiles(
+      env,
+      chatId
+    );
+
+    return true;
+
+  }
+
+
+  // ====================================================
+  // FILE DETAIL
+  // ====================================================
+
+  if (
+    data.startsWith(
+      "admin:file:"
+    )
+  ) {
+
+    const fileId =
+      data.substring(
+        "admin:file:".length
+      );
+
+
+    await answerCallback(
+      env,
+      callbackId
+    );
+
+
+    await showFileDetail(
+      env,
+      chatId,
+      fileId
+    );
+
+    return true;
+
+  }
+
+
+  // ====================================================
+  // DISABLE LINK
+  // ====================================================
+
+  if (
+    data.startsWith(
+      "admin:disable:"
+    )
+  ) {
+
+    const fileId =
+      data.substring(
+        "admin:disable:".length
+      );
+
+
+    await answerCallback(
+      env,
+      callbackId,
+      "Menonaktifkan link..."
+    );
+
+
+    await disableFile(
+      env,
+      chatId,
+      fileId
+    );
+
+    return true;
+
+  }
+
+
+  // ====================================================
+  // USER MENU
+  // ====================================================
+
+  if (
+    data === "admin:users"
+  ) {
+
+    await answerCallback(
+      env,
+      callbackId,
+      "Memuat user..."
+    );
+
+
+    await showUsers(
+      env,
+      chatId
+    );
+
+    return true;
+
+  }
+
+
+  // ====================================================
+  // BLOCK USER
+  // ====================================================
+
+  if (
+    data.startsWith(
+      "admin:block:"
+    )
+  ) {
+
+    const targetUserId =
+      data.substring(
+        "admin:block:".length
+      );
+
+
+    await answerCallback(
+      env,
+      callbackId,
+      "Memblokir user..."
+    );
+
+
+    await blockUser(
+      env,
+      chatId,
+      userId,
+      targetUserId
+    );
+
+    return true;
+
+  }
+
+
+  // ====================================================
+  // UNBLOCK USER
+  // ====================================================
+
+  if (
+    data.startsWith(
+      "admin:unblock:"
+    )
+  ) {
+
+    const targetUserId =
+      data.substring(
+        "admin:unblock:".length
+      );
+
+
+    await answerCallback(
+      env,
+      callbackId,
+      "Membuka blokir..."
+    );
+
+
+    await unblockUser(
+      env,
+      chatId,
+      targetUserId
+    );
+
+    return true;
+
+  }
+
+
+  // ====================================================
+  // CAPTION MENU
+  // ====================================================
+
+  if (
+    data === "admin:caption"
+  ) {
+
+    await answerCallback(
+      env,
+      callbackId
+    );
+
+
+    await showCaptionMenu(
+      env,
+      chatId
+    );
+
+    return true;
+
+  }
+
+
+  // ====================================================
+  // ADD CAPTION
+  // ====================================================
+
+  if (
+    data === "admin:caption:add"
+  ) {
+
+    await answerCallback(
+      env,
+      callbackId,
+      "Silakan kirim caption."
+    );
+
+
+    await startAddCaption(
+      env,
+      userId,
+      chatId
+    );
+
+    return true;
+
+  }
+
+
+  // ====================================================
+  // DELETE CAPTION
+  // ====================================================
+
+  if (
+    data.startsWith(
+      "admin:caption:delete:"
+    )
+  ) {
+
+    const captionId =
+      data.substring(
+        "admin:caption:delete:".length
+      );
+
+
+    await answerCallback(
+      env,
+      callbackId,
+      "Menghapus caption..."
+    );
+
+
+    await deleteCaption(
+      env,
+      chatId,
+      captionId
+    );
+
+    return true;
+
+  }
+
+
+  // ====================================================
+  // ADMIN MENU
+  // ====================================================
+
+  if (
+    data === "admin:admins"
+  ) {
+
+    await answerCallback(
+      env,
+      callbackId
+    );
+
+
+    await showAdmins(
+      env,
+      chatId
+    );
+
+    return true;
+
+  }
+
+
+  return false;
+
+}
+
+
+// ======================================================
 // HANDLE CALLBACK
 // ======================================================
 
@@ -111,8 +524,37 @@ export async function handleCallback(
       message?.chat?.id;
 
 
-    if (!data || !callbackId) {
+    if (
+      !data ||
+      !callbackId
+    ) {
+
       return;
+
+    }
+
+
+    // ==================================================
+    // ADMIN CALLBACK
+    // ==================================================
+
+    if (
+      data.startsWith(
+        "admin:"
+      )
+    ) {
+
+      const handled =
+        await handleAdminCallback(
+          callback,
+          env
+        );
+
+
+      if (handled) {
+        return;
+      }
+
     }
 
 
@@ -121,7 +563,9 @@ export async function handleCallback(
     // ==================================================
 
     if (
-      data.startsWith("protect:")
+      data.startsWith(
+        "protect:"
+      )
     ) {
 
       const parts =
@@ -131,7 +575,10 @@ export async function handleCallback(
         parts[1];
 
       const sessionId =
-        parts.slice(2).join(":");
+        parts
+          .slice(2)
+          .join(":");
+
 
       const protect =
         value === "on";
@@ -168,6 +615,7 @@ export async function handleCallback(
       await answerCallback(
         env,
         callbackId,
+
         protect
           ? "Protect Content dipilih."
           : "Public dipilih."
@@ -254,14 +702,18 @@ export async function handleCallback(
     // ==================================================
 
     if (
-      data.startsWith("caption:")
+      data.startsWith(
+        "caption:"
+      )
     ) {
 
       const parts =
         data.split(":");
 
       const sessionId =
-        parts.slice(2).join(":");
+        parts
+          .slice(2)
+          .join(":");
 
 
       const session =
@@ -323,17 +775,23 @@ export async function handleCallback(
     // ==================================================
 
     if (
-      data.startsWith("duration:")
+      data.startsWith(
+        "duration:"
+      )
     ) {
 
       const parts =
         data.split(":");
 
+
       const durationType =
         parts[1];
 
+
       const sessionId =
-        parts.slice(2).join(":");
+        parts
+          .slice(2)
+          .join(":");
 
 
       const session =
@@ -361,7 +819,8 @@ export async function handleCallback(
       // ================================================
 
       if (
-        durationType === "custom"
+        durationType ===
+        "custom"
       ) {
 
         await setStep(
@@ -410,7 +869,8 @@ export async function handleCallback(
       // ================================================
 
       if (
-        durationType === "forever"
+        durationType ===
+        "forever"
       ) {
 
         await setDuration(
@@ -446,7 +906,7 @@ export async function handleCallback(
 
 
       // ================================================
-      // DURASI STANDAR
+      // STANDARD DURATION
       // ================================================
 
       const durationMap = {
