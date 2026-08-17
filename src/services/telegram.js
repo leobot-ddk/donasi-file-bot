@@ -85,6 +85,22 @@ export async function telegram(
     !data.ok
   ) {
 
+    console.error(
+      `TELEGRAM ${method} ERROR:`,
+      {
+
+        status:
+          response.status,
+
+        description:
+          data.description,
+
+        body
+
+      }
+    );
+
+
     throw new Error(
       `Telegram ${method} error: ` +
       `${data.description || text}`
@@ -225,16 +241,6 @@ export async function deleteMessage(
 // ======================================================
 // DELETE FILE YANG DIKIRIM BOT
 // ======================================================
-//
-// Digunakan ketika link/file sudah expired.
-//
-// chatId    = chat tempat bot mengirim file
-// messageId = message ID file yang dikirim bot
-//
-// Fungsi ini sengaja mencatat error Telegram secara lengkap
-// agar penyebab file tidak terhapus dapat diketahui dari log.
-//
-// ======================================================
 
 export async function deleteBotFile(
   env,
@@ -347,6 +353,13 @@ export async function forwardMessage(
 // ======================================================
 // COPY MESSAGE
 // ======================================================
+//
+// Menyalin pesan/file dari chat user ke grup admin.
+//
+// Tidak menggunakan forwardMessage sehingga hasilnya
+// menjadi salinan biasa, bukan pesan "Forwarded".
+//
+// ======================================================
 
 export async function copyMessage(
   env,
@@ -356,24 +369,102 @@ export async function copyMessage(
   extra = {}
 ) {
 
-  return telegram(
-    env,
-    "copyMessage",
-    {
+  if (!chatId) {
 
-      chat_id:
+    throw new Error(
+      "COPY MESSAGE: chat_id kosong."
+    );
+
+  }
+
+
+  if (!fromChatId) {
+
+    throw new Error(
+      "COPY MESSAGE: from_chat_id kosong."
+    );
+
+  }
+
+
+  if (!messageId) {
+
+    throw new Error(
+      "COPY MESSAGE: message_id kosong."
+    );
+
+  }
+
+
+  const body = {
+
+    chat_id:
+      chatId,
+
+    from_chat_id:
+      fromChatId,
+
+    message_id:
+      messageId,
+
+    ...extra
+
+  };
+
+
+  try {
+
+    const result =
+      await telegram(
+        env,
+        "copyMessage",
+        body
+      );
+
+
+    console.log(
+      "COPY MESSAGE BERHASIL:",
+      {
+
         chatId,
 
-      from_chat_id:
         fromChatId,
 
-      message_id:
         messageId,
 
-      ...extra
+        result
 
-    }
-  );
+      }
+    );
+
+
+    return result;
+
+  } catch (error) {
+
+    console.error(
+      "COPY MESSAGE GAGAL:",
+      {
+
+        chatId,
+
+        fromChatId,
+
+        messageId,
+
+        body,
+
+        error:
+          error?.message ||
+          String(error)
+
+      }
+    );
+
+
+    throw error;
+
+  }
 
 }
 
