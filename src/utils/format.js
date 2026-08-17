@@ -97,13 +97,21 @@ export function formatDuration(seconds) {
 // ======================================================
 //
 // Contoh:
-// 30s
-// 30min
+// 1h
 // 2h
 // 3d
+// 7d
 // 2w
 // 1m
 // 6mo
+//
+// Minimal custom duration = 1 jam.
+//
+// Tidak menerima:
+// 30s
+// 30sec
+// 30min
+// 30minutes
 //
 // forever / selamanya = tanpa expiry
 // ======================================================
@@ -118,6 +126,7 @@ export function parseDuration(value) {
     return null;
 
   }
+
 
   const input =
     String(value)
@@ -152,10 +161,19 @@ export function parseDuration(value) {
   // ====================================================
   // FORMAT
   // ====================================================
+  //
+  // Hanya menerima:
+  // h  = jam
+  // d  = hari
+  // w  = minggu
+  // m  = bulan
+  //
+  // Menit dan detik sengaja tidak tersedia.
+  // ====================================================
 
   const match =
     input.match(
-      /^(\d+(?:\.\d+)?)\s*(s|sec|secs|second|seconds|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|week|weeks|m|mo|month|months)$/
+      /^(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours|d|day|days|w|week|weeks|m|mo|month|months)$/
     );
 
 
@@ -187,49 +205,10 @@ export function parseDuration(value) {
 
 
   // ====================================================
-  // DETIK
-  // ====================================================
-
-  if (
-    [
-      "s",
-      "sec",
-      "secs",
-      "second",
-      "seconds"
-    ].includes(unit)
-  ) {
-
-    seconds =
-      amount;
-
-  }
-
-
-  // ====================================================
-  // MENIT
-  // ====================================================
-
-  else if (
-    [
-      "min",
-      "mins",
-      "minute",
-      "minutes"
-    ].includes(unit)
-  ) {
-
-    seconds =
-      amount * 60;
-
-  }
-
-
-  // ====================================================
   // JAM
   // ====================================================
 
-  else if (
+  if (
     [
       "h",
       "hr",
@@ -240,7 +219,9 @@ export function parseDuration(value) {
   ) {
 
     seconds =
-      amount * 60 * 60;
+      amount *
+      60 *
+      60;
 
   }
 
@@ -317,6 +298,27 @@ export function parseDuration(value) {
 
   }
 
+
+  // ====================================================
+  // MINIMAL 1 JAM
+  // ====================================================
+
+  const minimumDuration =
+    60 * 60;
+
+
+  if (
+    seconds < minimumDuration
+  ) {
+
+    return null;
+
+  }
+
+
+  // ====================================================
+  // VALIDASI AKHIR
+  // ====================================================
 
   if (
     !Number.isFinite(seconds) ||
