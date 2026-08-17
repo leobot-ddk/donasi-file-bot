@@ -716,6 +716,15 @@ export async function showDashboard(
 // ======================================================
 // DAFTAR FILE
 // ======================================================
+//
+// Hanya menampilkan file yang:
+// - status = active
+// - belum expired
+//
+// File expired tetap ada di database agar dashboard
+// tetap dapat menghitung total dan expired.
+//
+// ======================================================
 
 export async function showFiles(
   env,
@@ -729,17 +738,64 @@ export async function showFiles(
       await select(
         env,
         "files",
-        "select=id,file_name,media_type,status,expires_at,created_at,owner_telegram_id,access_count&order=id.desc&limit=30"
+        "select=id,file_name,media_type,status,expires_at,created_at,owner_telegram_id,access_count&status=eq.active&order=id.desc&limit=30"
+      );
+
+
+    const now =
+      Date.now();
+
+
+    const activeFiles =
+      (files || []).filter(
+        file => {
+
+          if (
+            String(
+              file.status || ""
+            ).toLowerCase() !==
+            "active"
+          ) {
+
+            return false;
+
+          }
+
+
+          // File tanpa expiry = selamanya
+
+          if (
+            !file.expires_at
+          ) {
+
+            return true;
+
+          }
+
+
+          const expiresAt =
+            new Date(
+              file.expires_at
+            ).getTime();
+
+
+          return (
+            Number.isFinite(
+              expiresAt
+            ) &&
+            expiresAt > now
+          );
+
+        }
       );
 
 
     if (
-      !files ||
-      files.length === 0
+      activeFiles.length === 0
     ) {
 
       const text =
-        "📁 Belum ada file.";
+        "📁 Belum ada file aktif.";
 
 
       const keyboard = [
@@ -786,7 +842,7 @@ export async function showFiles(
 
 
     let text =
-      "📁 DAFTAR FILE\n\n";
+      "📁 DAFTAR FILE AKTIF\n\n";
 
 
     const buttons = [];
@@ -794,12 +850,12 @@ export async function showFiles(
 
     for (
       let i = 0;
-      i < files.length;
+      i < activeFiles.length;
       i++
     ) {
 
       const file =
-        files[i];
+        activeFiles[i];
 
 
       text +=
@@ -946,21 +1002,25 @@ export async function showFileDetail(
     const keyboard = [];
 
 
+    // ==================================================
+    // HAPUS LINK
+    // ==================================================
+
     if (
       String(
         file.status || ""
-      ).toLowerCase() !==
-      "inactive"
+      ).toLowerCase() ===
+      "active"
     ) {
 
       keyboard.push([
 
         {
           text:
-            "🗑️ Nonaktifkan Link",
+            "🗑️ Hapus Link",
 
           callback_data:
-            `admin:disable:${file.id}`
+            `admin:deletefile:${file.id}`
         }
 
       ]);
@@ -1027,6 +1087,11 @@ export async function showFileDetail(
 // ======================================================
 // DISABLE FILE
 // ======================================================
+//
+// Fungsi lama tetap dipertahankan untuk kompatibilitas.
+// Tombol panel sekarang menggunakan DELETE PERMANEN.
+//
+// ======================================================
 
 export async function disableFile(
   env,
@@ -1092,6 +1157,96 @@ export async function disableFile(
       chatId,
 
       "❌ Gagal menonaktifkan link."
+    );
+
+  }
+
+}
+
+
+// ======================================================
+// DELETE FILE PERMANEN
+// ======================================================
+//
+// Data file benar-benar dihapus dari database.
+//
+// ======================================================
+
+export async function deleteFile(
+  env,
+  chatId,
+  fileId,
+  messageId = null
+) {
+
+  try {
+
+    const file =
+      await selectOne(
+        env,
+        "files",
+
+        `select=id,file_name&id=eq.${encodeURIComponent(fileId)}`
+      );
+
+
+    if (!file) {
+
+      await sendAdminMessage(
+        env,
+        chatId,
+
+        "❌ File tidak ditemukan."
+      );
+
+      return;
+
+    }
+
+
+    const result =
+      await remove(
+        env,
+        "files",
+
+        `id=eq.${encodeURIComponent(fileId)}`
+      );
+
+
+    if (
+      result === null ||
+      result === undefined
+    ) {
+
+      console.warn(
+        "ADMIN DELETE FILE: hasil remove kosong.",
+        {
+          fileId
+        }
+      );
+
+    }
+
+
+    await showFiles(
+      env,
+      chatId,
+      messageId
+    );
+
+  } catch (error) {
+
+    console.error(
+      "ADMIN DELETE FILE ERROR:",
+      error
+    );
+
+
+    await sendAdminMessage(
+      env,
+      chatId,
+
+      "❌ Gagal menghapus link."
     );
 
   }
