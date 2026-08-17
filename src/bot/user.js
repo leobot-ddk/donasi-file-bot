@@ -108,7 +108,7 @@ export async function getFileByToken(
 
 
 // ======================================================
-// HANDLE /START
+// HANDLE START
 // ======================================================
 
 export async function handleStart(
@@ -133,16 +133,9 @@ export async function handleStart(
       : "";
 
 
-  // ====================================================
-  // AMBIL PARAMETER /start
-  //
-  // Contoh:
-  // /start
-  // /start ABC123
-  // ====================================================
-
   const parts =
     text.split(/\s+/);
+
 
   const startParameter =
     parts.length > 1
@@ -151,7 +144,7 @@ export async function handleStart(
 
 
   // ====================================================
-  // /start TANPA TOKEN
+  // START TANPA TOKEN
   // ====================================================
 
   if (!startParameter) {
@@ -161,16 +154,16 @@ export async function handleStart(
       chatId,
 
       "👋 Selamat datang!\n\n" +
-      "📁 Bot ini digunakan untuk membuat link file.\n\n" +
-      "Kirim file ke bot untuk mulai."
+      "📁 Kirim file ke bot untuk membuat link."
     );
 
     return;
+
   }
 
 
   // ====================================================
-  // /start DENGAN TOKEN
+  // CARI FILE
   // ====================================================
 
   const file =
@@ -191,11 +184,12 @@ export async function handleStart(
     );
 
     return;
+
   }
 
 
   // ====================================================
-  // CEK STATUS FILE
+  // CEK STATUS
   // ====================================================
 
   if (
@@ -211,6 +205,7 @@ export async function handleStart(
     );
 
     return;
+
   }
 
 
@@ -225,12 +220,12 @@ export async function handleStart(
         file.expires_at
       ).getTime();
 
+
     if (
       Number.isFinite(expiresAt) &&
       expiresAt <= Date.now()
     ) {
 
-      // Tandai expired
       try {
 
         await update(
@@ -263,6 +258,7 @@ export async function handleStart(
       );
 
       return;
+
     }
 
   }
@@ -282,7 +278,7 @@ export async function handleStart(
 
 
     // ==================================================
-    // UPDATE ACCESS COUNT
+    // UPDATE ACCESS
     // ==================================================
 
     const currentCount =
@@ -365,6 +361,7 @@ export async function handleMedia(
     );
 
     return;
+
   }
 
 
@@ -777,10 +774,6 @@ export async function createFileFromSession(
   }
 
 
-  // ====================================================
-  // INSERT KE TABEL files
-  // ====================================================
-
   const rows =
     await insert(
       env,
@@ -933,13 +926,75 @@ export async function finishFile(
 
 
   // ====================================================
-  // BUAT LINK
+  // LINK
   // ====================================================
 
   const link =
     `https://t.me/${botUsername}?start=${encodeURIComponent(
       file.token
     )}`;
+
+
+  // ====================================================
+  // FORMAT WAKTU BERAKHIR
+  // WIB = UTC+7
+  // ====================================================
+
+  let expiresText =
+    "Selamanya";
+
+
+  if (file.expires_at) {
+
+    const expiresDate =
+      new Date(
+        file.expires_at
+      );
+
+
+    if (
+      !Number.isNaN(
+        expiresDate.getTime()
+      )
+    ) {
+
+      const waktu =
+        expiresDate.toLocaleString(
+          "id-ID",
+          {
+            timeZone:
+              "Asia/Jakarta",
+
+            day:
+              "2-digit",
+
+            month:
+              "2-digit",
+
+            year:
+              "numeric",
+
+            hour:
+              "2-digit",
+
+            minute:
+              "2-digit",
+
+            second:
+              "2-digit",
+
+            hour12:
+              false
+          }
+        );
+
+
+      expiresText =
+        `${waktu} WIB`;
+
+    }
+
+  }
 
 
   // ====================================================
@@ -950,15 +1005,17 @@ export async function finishFile(
     env,
     session.source_chat_id,
 
-    "✅ LINK BERHASIL DIBUAT!\n\n" +
+    "✅ LINK BERHASIL DIBUAT!\n" +
 
-    `🔗 ${link}\n\n` +
+    `🔗 ${link}\n` +
 
     `⏳ Durasi: ${
       formatDuration(
         file.duration_seconds
       )
-    }`
+    }\n` +
+
+    `berakhir: ${expiresText}`
   );
 
 
@@ -1067,10 +1124,6 @@ export async function handleText(
   }
 
 
-  // ====================================================
-  // CARI SESSION TERBARU
-  // ====================================================
-
   const session =
     await getUserState(
       env,
@@ -1079,7 +1132,7 @@ export async function handleText(
 
 
   // ====================================================
-  // JIKA SESSION SEDANG MENUNGGU CUSTOM DURATION
+  // CUSTOM DURATION
   // ====================================================
 
   if (
@@ -1310,4 +1363,4 @@ export async function sendFile(
 
   }
 
-}
+    }
