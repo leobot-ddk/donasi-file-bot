@@ -10,16 +10,15 @@ import {
 import {
   setProtect,
   askCaption,
-  askDuration,
   setCaption,
+  askDuration,
   setDuration,
-  finishFile,
-  getSession
+  finishFile
 } from "./user.js";
 
 
 // ======================================================
-// CALLBACK HANDLER
+// HANDLE CALLBACK
 // ======================================================
 
 export async function handleCallback(
@@ -59,6 +58,7 @@ export async function handleCallback(
   }
 
 
+  // Tutup loading tombol
   await answerCallbackQuery(
     env,
     queryId
@@ -66,45 +66,61 @@ export async function handleCallback(
 
 
   // ====================================================
-  // PROTECT / PUBLIC
+  // PARSE CALLBACK DATA
+  // ====================================================
+  //
+  // Format:
+  //
+  // protect:on:SESSION_ID
+  // protect:off:SESSION_ID
+  // caption:none:SESSION_ID
+  // duration:forever:SESSION_ID
+  // duration:1d:SESSION_ID
+  // duration:7d:SESSION_ID
+  // duration:30d:SESSION_ID
+  // duration:custom:SESSION_ID
+  //
+  // ====================================================
+
+  const parts =
+    data.split(":");
+
+  const action =
+    parts[0] || "";
+
+  const value =
+    parts[1] || "";
+
+  const sessionId =
+    parts.slice(2).join(":");
+
+
+  if (!sessionId) {
+
+    await sendMessage(
+      env,
+      chatId,
+      "❌ Sesi file tidak ditemukan.\n\nKirim file kembali."
+    );
+
+    return;
+  }
+
+
+  // ====================================================
+  // PROTECT ON
   // ====================================================
 
   if (
-    data.startsWith("protect:")
+    action === "protect" &&
+    value === "on"
   ) {
 
-    const parts =
-      data.split(":");
-
-    const mode =
-      parts[1];
-
-    const sessionId =
-      parts.slice(2).join(":");
-
-
-    if (
-      !sessionId ||
-      (
-        mode !== "on" &&
-        mode !== "off"
-      )
-    ) {
-
-      await sendMessage(
-        env,
-        chatId,
-        "❌ Data sesi tidak valid."
-      );
-
-      return;
-    }
-
-
     const session =
-      await getSession(
+      await setProtect(
         env,
-        sessionId
+        sessionId,
+        true
       );
 
 
@@ -113,43 +129,64 @@ export async function handleCallback(
       await sendMessage(
         env,
         chatId,
-        "❌ Sesi file tidak ditemukan.\n\n" +
-        "Kirim file kembali."
+        "❌ Sesi file tidak ditemukan.\n\nKirim file kembali."
       );
 
       return;
     }
-
-
-    if (
-      Number(session.telegram_id) !==
-      Number(userId)
-    ) {
-
-      await sendMessage(
-        env,
-        chatId,
-        "❌ Sesi ini bukan milik Anda."
-      );
-
-      return;
-    }
-
-
-    await setProtect(
-      env,
-      sessionId,
-      mode === "on"
-    );
 
 
     await sendMessage(
       env,
       chatId,
+      "🔒 Protect Content: ON"
+    );
 
-      mode === "on"
-        ? "🔒 Protect Content: ON"
-        : "🌐 Public: ON"
+
+    await askCaption(
+      env,
+      chatId,
+      sessionId
+    );
+
+
+    return;
+  }
+
+
+  // ====================================================
+  // PROTECT OFF
+  // ====================================================
+
+  if (
+    action === "protect" &&
+    value === "off"
+  ) {
+
+    const session =
+      await setProtect(
+        env,
+        sessionId,
+        false
+      );
+
+
+    if (!session) {
+
+      await sendMessage(
+        env,
+        chatId,
+        "❌ Sesi file tidak ditemukan.\n\nKirim file kembali."
+      );
+
+      return;
+    }
+
+
+    await sendMessage(
+      env,
+      chatId,
+      "🌐 Public: ON"
     );
 
 
@@ -169,31 +206,15 @@ export async function handleCallback(
   // ====================================================
 
   if (
-    data.startsWith("caption:none:")
+    action === "caption" &&
+    value === "none"
   ) {
 
-    const sessionId =
-      data.substring(
-        "caption:none:".length
-      );
-
-
-    if (!sessionId) {
-
-      await sendMessage(
-        env,
-        chatId,
-        "❌ Data sesi tidak valid."
-      );
-
-      return;
-    }
-
-
     const session =
-      await getSession(
+      await setCaption(
         env,
-        sessionId
+        sessionId,
+        null
       );
 
 
@@ -202,34 +223,11 @@ export async function handleCallback(
       await sendMessage(
         env,
         chatId,
-        "❌ Sesi file tidak ditemukan.\n\n" +
-        "Kirim file kembali."
+        "❌ Sesi file tidak ditemukan.\n\nKirim file kembali."
       );
 
       return;
     }
-
-
-    if (
-      Number(session.telegram_id) !==
-      Number(userId)
-    ) {
-
-      await sendMessage(
-        env,
-        chatId,
-        "❌ Sesi ini bukan milik Anda."
-      );
-
-      return;
-    }
-
-
-    await setCaption(
-      env,
-      sessionId,
-      null
-    );
 
 
     await askDuration(
@@ -244,39 +242,149 @@ export async function handleCallback(
 
 
   // ====================================================
-  // DURASI
+  // DURATION FOREVER
   // ====================================================
 
   if (
-    data.startsWith("duration:")
+    action === "duration" &&
+    value === "forever"
   ) {
 
-    const parts =
-      data.split(":");
+    await finishWithDuration(
+      env,
+      chatId,
+      sessionId,
+      null
+    );
 
-    const type =
-      parts[1];
-
-    const sessionId =
-      parts.slice(2).join(":");
+    return;
+  }
 
 
-    if (!sessionId) {
+  // ====================================================
+  // DURATION 1 DAY
+  // ====================================================
 
-      await sendMessage(
-        env,
-        chatId,
-        "❌ Data sesi tidak valid."
-      );
+  if (
+    action === "duration" &&
+    value === "1d"
+  ) {
 
-      return;
-    }
+    await finishWithDuration(
+      env,
+      chatId,
+      sessionId,
+      1 * 24 * 60 * 60
+    );
 
+    return;
+  }
+
+
+  // ====================================================
+  // DURATION 7 DAYS
+  // ====================================================
+
+  if (
+    action === "duration" &&
+    value === "7d"
+  ) {
+
+    await finishWithDuration(
+      env,
+      chatId,
+      sessionId,
+      7 * 24 * 60 * 60
+    );
+
+    return;
+  }
+
+
+  // ====================================================
+  // DURATION 30 DAYS
+  // ====================================================
+
+  if (
+    action === "duration" &&
+    value === "30d"
+  ) {
+
+    await finishWithDuration(
+      env,
+      chatId,
+      sessionId,
+      30 * 24 * 60 * 60
+    );
+
+    return;
+  }
+
+
+  // ====================================================
+  // CUSTOM
+  // ====================================================
+
+  if (
+    action === "duration" &&
+    value === "custom"
+  ) {
+
+    await sendMessage(
+      env,
+      chatId,
+
+      "✏️ Kirim durasi custom.\n\n" +
+
+      "Contoh:\n" +
+      "• 30min = 30 menit\n" +
+      "• 2h = 2 jam\n" +
+      "• 3d = 3 hari\n" +
+      "• 2w = 2 minggu\n" +
+      "• 1m = 1 bulan\n" +
+      "• forever = selamanya"
+    );
+
+
+    return;
+  }
+
+
+  // ====================================================
+  // CALLBACK TIDAK DIKENAL
+  // ====================================================
+
+  await sendMessage(
+    env,
+    chatId,
+    "❌ Pilihan tidak dikenali."
+  );
+
+}
+
+
+// ======================================================
+// FINISH DENGAN DURASI
+// ======================================================
+
+async function finishWithDuration(
+  env,
+  chatId,
+  sessionId,
+  seconds
+) {
+
+  try {
+
+    // ================================================
+    // SIMPAN DURASI
+    // ================================================
 
     const session =
-      await getSession(
+      await setDuration(
         env,
-        sessionId
+        sessionId,
+        seconds
       );
 
 
@@ -285,6 +393,7 @@ export async function handleCallback(
       await sendMessage(
         env,
         chatId,
+
         "❌ Sesi file tidak ditemukan.\n\n" +
         "Kirim file kembali."
       );
@@ -293,142 +402,9 @@ export async function handleCallback(
     }
 
 
-    if (
-      Number(session.telegram_id) !==
-      Number(userId)
-    ) {
-
-      await sendMessage(
-        env,
-        chatId,
-        "❌ Sesi ini bukan milik Anda."
-      );
-
-      return;
-    }
-
-
     // ================================================
-    // CUSTOM
+    // BUAT LINK
     // ================================================
-
-    if (
-      type === "custom"
-    ) {
-
-      await sendMessage(
-        env,
-        chatId,
-
-        "✏️ Kirim durasi custom.\n\n" +
-
-        "Contoh:\n" +
-        "30min = 30 menit\n" +
-        "2h = 2 jam\n" +
-        "3d = 3 hari\n" +
-        "2w = 2 minggu\n" +
-        "1m = 1 bulan\n" +
-        "forever = selamanya"
-      );
-
-
-      // Custom akan diproses oleh router
-      // menggunakan sessionId dari sesi terbaru user.
-
-      return;
-    }
-
-
-    // ================================================
-    // SELAMANYA
-    // ================================================
-
-    if (
-      type === "forever"
-    ) {
-
-      await setDuration(
-        env,
-        sessionId,
-        null
-      );
-
-
-      await finishFile(
-        env,
-        sessionId
-      );
-
-
-      return;
-    }
-
-
-    // ================================================
-    // PRESET
-    // ================================================
-
-    let seconds =
-      null;
-
-
-    if (
-      type === "1d"
-    ) {
-
-      seconds =
-        1 *
-        24 *
-        60 *
-        60;
-
-    }
-
-
-    else if (
-      type === "7d"
-    ) {
-
-      seconds =
-        7 *
-        24 *
-        60 *
-        60;
-
-    }
-
-
-    else if (
-      type === "30d"
-    ) {
-
-      seconds =
-        30 *
-        24 *
-        60 *
-        60;
-
-    }
-
-
-    else {
-
-      await sendMessage(
-        env,
-        chatId,
-        "❌ Durasi tidak dikenali."
-      );
-
-      return;
-    }
-
-
-    await setDuration(
-      env,
-      sessionId,
-      seconds
-    );
-
 
     await finishFile(
       env,
@@ -436,7 +412,22 @@ export async function handleCallback(
     );
 
 
-    return;
+  } catch (error) {
+
+    console.error(
+      "FINISH CALLBACK ERROR:",
+      error
+    );
+
+
+    await sendMessage(
+      env,
+      chatId,
+
+      "❌ Gagal membuat link.\n\n" +
+      "Silakan coba lagi."
+    );
+
   }
 
 }
