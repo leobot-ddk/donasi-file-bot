@@ -113,33 +113,63 @@ export default {
   ) {
 
     // ==============================================
-    // LOG UNTUK MEMASTIKAN CRON BERJALAN
+    // CRON START
     // ==============================================
 
     console.log(
-      "CRON BERJALAN:",
+      "CRON START:",
       new Date().toISOString()
     );
 
 
-    // ==============================================
-    // JALANKAN EXPIRE FILES
-    // ==============================================
+    try {
 
-    ctx.waitUntil(
+      // ============================================
+      // JALANKAN EXPIRE FILES
+      // ============================================
 
-      expireFiles(
-        env
-      ).catch(error => {
+      console.log(
+        "CRON MENJALANKAN EXPIRE FILES"
+      );
 
-        console.error(
-          "EXPIRY ERROR:",
-          error
+
+      const result =
+        await expireFiles(
+          env
         );
 
-      })
 
-    );
+      // ============================================
+      // HASIL EXPIRE FILES
+      // ============================================
+
+      console.log(
+        "CRON EXPIRE RESULT:",
+        result
+      );
+
+
+      // ============================================
+      // CRON SELESAI
+      // ============================================
+
+      console.log(
+        "CRON SELESAI:",
+        new Date().toISOString()
+      );
+
+    } catch (error) {
+
+      // ============================================
+      // ERROR CRON
+      // ============================================
+
+      console.error(
+        "CRON ERROR:",
+        error
+      );
+
+    }
 
   }
 
