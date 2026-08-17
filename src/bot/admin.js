@@ -1796,6 +1796,25 @@ export async function showAdmins(
 
 
 // ======================================================
+// ADMIN SESSION CHECK
+// ======================================================
+
+export function hasAdminSession(
+  userId
+) {
+
+  if (!userId) {
+    return false;
+  }
+
+  return adminSessions.has(
+    String(userId)
+  );
+
+}
+
+
+// ======================================================
 // EXPORTS
 // ======================================================
 
