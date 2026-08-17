@@ -1,12 +1,19 @@
 // ======================================================
 // BOT ROUTER
+// DONASI FILE BOT
 // ======================================================
 
-import { isAdmin } from "../config.js";
+import {
+  isAdmin
+} from "../config.js";
 
 import {
   sendMessage
 } from "../services/telegram.js";
+
+import {
+  selectOne
+} from "../database/supabase.js";
 
 import {
   handleStart,
@@ -23,6 +30,54 @@ import {
   handleAdminCommand,
   handleAdminText
 } from "./admin.js";
+
+
+// ======================================================
+// CHECK BLOCKED USER
+// ======================================================
+
+async function isBlocked(
+  env,
+  userId
+) {
+
+  if (!userId) {
+    return false;
+  }
+
+
+  try {
+
+    const user =
+      await selectOne(
+        env,
+        "blocked_users",
+
+        `select=id&telegram_user_id=eq.${encodeURIComponent(
+          userId
+        )}&limit=1`
+      );
+
+
+    return Boolean(
+      user
+    );
+
+  } catch (error) {
+
+    console.error(
+      "CHECK BLOCKED USER ERROR:",
+      error
+    );
+
+
+    // Jika database error,
+    // jangan otomatis memblokir user.
+    return false;
+
+  }
+
+}
 
 
 // ======================================================
@@ -76,8 +131,54 @@ export async function handleUpdate(
       message.chat?.id;
 
 
-    if (!userId || !chatId) {
+    if (
+      !userId ||
+      !chatId
+    ) {
+
       return;
+
+    }
+
+
+    // ==================================================
+    // ADMIN
+    // ==================================================
+
+    const admin =
+      isAdmin(
+        userId,
+        env
+      );
+
+
+    // ==================================================
+    // CEK BLOCKED USER
+    // ==================================================
+
+    // Admin tidak pernah diblokir oleh sistem user.
+    if (!admin) {
+
+      const blocked =
+        await isBlocked(
+          env,
+          userId
+        );
+
+
+      if (blocked) {
+
+        await sendMessage(
+          env,
+          chatId,
+
+          "🚫 Kamu telah diblokir dari menggunakan bot."
+        );
+
+        return;
+
+      }
+
     }
 
 
@@ -90,7 +191,9 @@ export async function handleUpdate(
       message.text
         .trim()
         .toLowerCase()
-        .startsWith("/start")
+        .startsWith(
+          "/start"
+        )
     ) {
 
       await handleStart(
@@ -111,20 +214,22 @@ export async function handleUpdate(
       typeof message.text === "string" &&
       message.text
         .trim()
-        .startsWith("/") &&
-      isAdmin(
-        userId,
-        env
-      )
+        .startsWith("/")
     ) {
 
-      await handleAdminCommand(
-        message,
-        env
-      );
+      if (admin) {
 
-      return;
+        await handleAdminCommand(
+          message,
+          env
+        );
 
+        return;
+
+      }
+
+      // Command user biasa
+      // diteruskan ke user handler.
     }
 
 
@@ -191,11 +296,11 @@ export async function handleUpdate(
       // CEK SESSION UPLOAD USER
       // =================================================
       //
-      // Ini harus dicek SEBELUM ADMIN TEXT.
+      // Ini harus dilakukan sebelum ADMIN TEXT.
       //
-      // Jika admin sedang upload file dan kemudian
-      // mengetik caption, caption harus masuk ke
-      // handleText(), bukan handleAdminText().
+      // Jika admin sedang upload file lalu mengirim
+      // caption untuk file tersebut, caption harus masuk
+      // ke handleText(), bukan ke admin panel.
       //
       // =================================================
 
@@ -222,12 +327,7 @@ export async function handleUpdate(
       // ADMIN TEXT
       // =================================================
 
-      if (
-        isAdmin(
-          userId,
-          env
-        )
-      ) {
+      if (admin) {
 
         await handleAdminText(
           message,
@@ -240,7 +340,7 @@ export async function handleUpdate(
 
 
       // =================================================
-      // TEXT USER BIASA
+      // USER TEXT
       // =================================================
 
       await handleText(
@@ -269,11 +369,13 @@ export async function handleUpdate(
       const chatId =
         update?.message?.chat?.id;
 
+
       if (chatId) {
 
         await sendMessage(
           env,
           chatId,
+
           "❌ Terjadi kesalahan saat memproses permintaan."
         );
 
