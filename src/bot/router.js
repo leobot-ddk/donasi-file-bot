@@ -45,7 +45,6 @@ async function isBlocked(
     return false;
   }
 
-
   try {
 
     const user =
@@ -58,7 +57,6 @@ async function isBlocked(
         )}&limit=1`
       );
 
-
     return Boolean(
       user
     );
@@ -70,9 +68,6 @@ async function isBlocked(
       error
     );
 
-
-    // Jika database error,
-    // jangan otomatis memblokir user.
     return false;
 
   }
@@ -142,7 +137,7 @@ export async function handleUpdate(
 
 
     // ==================================================
-    // ADMIN
+    // ADMIN CHECK
     // ==================================================
 
     const admin =
@@ -153,10 +148,9 @@ export async function handleUpdate(
 
 
     // ==================================================
-    // CEK BLOCKED USER
+    // BLOCKED USER
     // ==================================================
 
-    // Admin tidak pernah diblokir oleh sistem user.
     if (!admin) {
 
       const blocked =
@@ -228,8 +222,6 @@ export async function handleUpdate(
 
       }
 
-      // Command user biasa
-      // diteruskan ke user handler.
     }
 
 
@@ -293,14 +285,14 @@ export async function handleUpdate(
     ) {
 
       // =================================================
-      // CEK SESSION UPLOAD USER
+      // CEK SESSION UPLOAD
       // =================================================
       //
-      // Ini harus dilakukan sebelum ADMIN TEXT.
+      // Harus dilakukan sebelum ADMIN TEXT.
       //
-      // Jika admin sedang upload file lalu mengirim
-      // caption untuk file tersebut, caption harus masuk
-      // ke handleText(), bukan ke admin panel.
+      // Admin yang sedang melakukan proses upload file
+      // tetap harus bisa mengirim caption/durasi melalui
+      // user.js.
       //
       // =================================================
 
