@@ -1,17 +1,66 @@
-import { handleUpdate } from "./bot/router.js";
-import { expireFiles } from "./services/expiry.js";
+// ======================================================
+// MAIN WORKER
+// ======================================================
+
+import {
+  handleUpdate
+} from "./bot/router.js";
+
+import {
+  expireFiles
+} from "./services/expiry.js";
+
+
+// ======================================================
+// WORKER
+// ======================================================
 
 export default {
 
-  async fetch(request, env, ctx) {
+  // ====================================================
+  // FETCH
+  // ====================================================
+
+  async fetch(
+    request,
+    env,
+    ctx
+  ) {
+
+    // ==================================================
+    // CEK FILE EXPIRED
+    // ==================================================
+    //
+    // Setiap request ke Worker akan menjalankan
+    // pengecekan file expired di background.
+    //
+    // Ini tidak mengubah alur webhook Telegram.
+    //
+    // ==================================================
+
+    ctx.waitUntil(
+
+      expireFiles(
+        env
+      ).catch(error => {
+
+        console.error(
+          "EXPIRY FETCH ERROR:",
+          error
+        );
+
+      })
+
+    );
+
 
     const url =
       new URL(request.url);
 
 
-    // ================================================
+    // ==================================================
     // HEALTH CHECK
-    // ================================================
+    // ==================================================
 
     if (
       url.pathname === "/health"
@@ -19,7 +68,8 @@ export default {
 
       return Response.json({
 
-        ok: true,
+        ok:
+          true,
 
         service:
           "donasi-file-bot"
@@ -29,9 +79,9 @@ export default {
     }
 
 
-    // ================================================
+    // ==================================================
     // WEBHOOK TELEGRAM
-    // ================================================
+    // ==================================================
 
     if (
       url.pathname !== "/webhook"
@@ -44,6 +94,10 @@ export default {
     }
 
 
+    // ==================================================
+    // METHOD
+    // ==================================================
+
     if (
       request.method !== "POST"
     ) {
@@ -54,6 +108,10 @@ export default {
 
     }
 
+
+    // ==================================================
+    // HANDLE TELEGRAM UPDATE
+    // ==================================================
 
     try {
 
@@ -69,11 +127,14 @@ export default {
 
       return Response.json({
 
-        ok: true
+        ok:
+          true
 
       });
 
-    } catch (error) {
+    } catch (
+      error
+    ) {
 
       console.error(
         "WEBHOOK ERROR:",
@@ -84,15 +145,21 @@ export default {
       return Response.json(
 
         {
-          ok: false,
+
+          ok:
+            false,
 
           error:
             error?.message ||
             String(error)
+
         },
 
         {
-          status: 200
+
+          status:
+            200
+
         }
 
       );
@@ -102,9 +169,14 @@ export default {
   },
 
 
-  // ================================================
+  // ====================================================
   // CRON
-  // ================================================
+  // ====================================================
+  //
+  // Tetap dipakai sebagai pengecekan otomatis setiap
+  // 1 menit.
+  //
+  // ====================================================
 
   async scheduled(
     event,
@@ -112,26 +184,25 @@ export default {
     ctx
   ) {
 
-    // ==============================================
-    // CRON START
-    // ==============================================
+    console.log(
+      "=================================================="
+    );
 
     console.log(
-      "CRON START:",
+      "CRON BERJALAN:",
       new Date().toISOString()
     );
 
+    console.log(
+      "Menjalankan expireFiles..."
+    );
+
+
+    // ==================================================
+    // EXPIRE FILES
+    // ==================================================
 
     try {
-
-      // ============================================
-      // JALANKAN EXPIRE FILES
-      // ============================================
-
-      console.log(
-        "CRON MENJALANKAN EXPIRE FILES"
-      );
-
 
       const result =
         await expireFiles(
@@ -139,37 +210,32 @@ export default {
         );
 
 
-      // ============================================
-      // HASIL EXPIRE FILES
-      // ============================================
-
       console.log(
         "CRON EXPIRE RESULT:",
         result
       );
 
 
-      // ============================================
-      // CRON SELESAI
-      // ============================================
-
-      console.log(
-        "CRON SELESAI:",
-        new Date().toISOString()
-      );
-
-    } catch (error) {
-
-      // ============================================
-      // ERROR CRON
-      // ============================================
+    } catch (
+      error
+    ) {
 
       console.error(
-        "CRON ERROR:",
+        "CRON EXPIRY ERROR:",
         error
       );
 
     }
+
+
+    console.log(
+      "CRON SELESAI:",
+      new Date().toISOString()
+    );
+
+    console.log(
+      "=================================================="
+    );
 
   }
 
