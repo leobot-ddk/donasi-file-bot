@@ -3,7 +3,8 @@
 // ======================================================
 
 import {
-  sendMessage
+  sendMessage,
+  telegram
 } from "../services/telegram.js";
 
 import {
@@ -62,7 +63,8 @@ function formatDate(
     ).toLocaleString(
       "id-ID",
       {
-        timeZone: "Asia/Jakarta"
+        timeZone:
+          "Asia/Jakarta"
       }
     );
 
@@ -71,6 +73,116 @@ function formatDate(
     return String(value);
 
   }
+
+}
+
+
+// ======================================================
+// EDIT ADMIN MESSAGE
+// ======================================================
+
+export async function editAdminMessage(
+  env,
+  chatId,
+  messageId,
+  text,
+  keyboard = null
+) {
+
+  if (
+    !chatId ||
+    !messageId
+  ) {
+
+    return false;
+
+  }
+
+  try {
+
+    const params = {
+
+      chat_id:
+        chatId,
+
+      message_id:
+        messageId,
+
+      text
+
+    };
+
+
+    if (keyboard) {
+
+      params.reply_markup = {
+
+        inline_keyboard:
+          keyboard
+
+      };
+
+    } else {
+
+      params.reply_markup = {
+
+        inline_keyboard:
+          []
+
+      };
+
+    }
+
+
+    await telegram(
+      env,
+      "editMessageText",
+      params
+    );
+
+
+    return true;
+
+  } catch (error) {
+
+    console.error(
+      "EDIT ADMIN MESSAGE ERROR:",
+      error
+    );
+
+
+    return false;
+
+  }
+
+}
+
+
+// ======================================================
+// SEND ADMIN MESSAGE
+// ======================================================
+
+async function sendAdminMessage(
+  env,
+  chatId,
+  text,
+  keyboard = null
+) {
+
+  return sendMessage(
+    env,
+    chatId,
+    text,
+
+    keyboard
+      ? {
+          reply_markup: {
+            inline_keyboard:
+              keyboard
+          }
+        }
+      : undefined
+  );
 
 }
 
@@ -89,6 +201,7 @@ export async function handleAdminCommand(
 
   const chatId =
     message?.chat?.id;
+
 
   if (
     !checkAdmin(
@@ -187,7 +300,7 @@ export async function handleAdminCommand(
   }
 
 
-  await sendMessage(
+  await sendAdminMessage(
     env,
     chatId,
 
@@ -217,6 +330,7 @@ export async function handleAdminText(
   const chatId =
     message?.chat?.id;
 
+
   if (
     !checkAdmin(
       userId,
@@ -236,7 +350,7 @@ export async function handleAdminText(
 
 
   // ====================================================
-  // CAPTION INPUT
+  // ADD CAPTION
   // ====================================================
 
   if (
@@ -251,7 +365,7 @@ export async function handleAdminText(
 
     if (!caption) {
 
-      await sendMessage(
+      await sendAdminMessage(
         env,
         chatId,
 
@@ -267,9 +381,12 @@ export async function handleAdminText(
       env,
       "admin_captions",
       {
+
         caption,
+
         created_by:
           userId
+
       }
     );
 
@@ -279,7 +396,7 @@ export async function handleAdminText(
     );
 
 
-    await sendMessage(
+    await sendAdminMessage(
       env,
       chatId,
 
@@ -302,7 +419,7 @@ export async function handleAdminText(
   // DEFAULT
   // ====================================================
 
-  await sendMessage(
+  await sendAdminMessage(
     env,
     chatId,
 
@@ -319,73 +436,92 @@ export async function handleAdminText(
 
 export async function showAdminPanel(
   env,
-  chatId
+  chatId,
+  messageId = null
 ) {
 
-  await sendMessage(
+  const text =
+    "🛠 PANEL ADMIN\n\n" +
+    "Pilih menu:";
+
+
+  const keyboard = [
+
+    [
+      {
+        text:
+          "📊 Dashboard",
+
+        callback_data:
+          "admin:dashboard"
+      }
+    ],
+
+    [
+      {
+        text:
+          "🗑️ Hapus Link",
+
+        callback_data:
+          "admin:delete"
+      },
+
+      {
+        text:
+          "👤 User",
+
+        callback_data:
+          "admin:users"
+      }
+    ],
+
+    [
+      {
+        text:
+          "📝 Caption",
+
+        callback_data:
+          "admin:caption"
+      },
+
+      {
+        text:
+          "⚙️ Admin",
+
+        callback_data:
+          "admin:admins"
+      }
+    ]
+
+  ];
+
+
+  if (
+    messageId
+  ) {
+
+    const edited =
+      await editAdminMessage(
+        env,
+        chatId,
+        messageId,
+        text,
+        keyboard
+      );
+
+
+    if (edited) {
+      return;
+    }
+
+  }
+
+
+  await sendAdminMessage(
     env,
     chatId,
-
-    "🛠 PANEL ADMIN\n\n" +
-    "Pilih menu:",
-
-    {
-
-      reply_markup: {
-
-        inline_keyboard: [
-
-          [
-            {
-              text:
-                "📊 Dashboard",
-
-              callback_data:
-                "admin:dashboard"
-            }
-          ],
-
-          [
-            {
-              text:
-                "🗑️ Hapus Link",
-
-              callback_data:
-                "admin:delete"
-            },
-
-            {
-              text:
-                "👤 User",
-
-              callback_data:
-                "admin:users"
-            }
-          ],
-
-          [
-            {
-              text:
-                "📝 Caption",
-
-              callback_data:
-                "admin:caption"
-            },
-
-            {
-              text:
-                "⚙️ Admin",
-
-              callback_data:
-                "admin:admins"
-            }
-          ]
-
-        ]
-
-      }
-
-    }
+    text,
+    keyboard
   );
 
 }
@@ -397,7 +533,8 @@ export async function showAdminPanel(
 
 export async function showDashboard(
   env,
-  chatId
+  chatId,
+  messageId = null
 ) {
 
   try {
@@ -492,9 +629,7 @@ export async function showDashboard(
     }
 
 
-    await sendMessage(
-      env,
-      chatId,
+    const text =
 
       "📊 DASHBOARD\n\n" +
 
@@ -502,39 +637,60 @@ export async function showDashboard(
       `🟢 File aktif: ${active}\n` +
       `🔴 File expired: ${expired}\n` +
       `👁 Total akses: ${accesses}\n` +
-      `📅 File dibuat hari ini: ${today}`,
+      `📅 File dibuat hari ini: ${today}`;
 
-      {
 
-        reply_markup: {
+    const keyboard = [
 
-          inline_keyboard: [
+      [
+        {
+          text:
+            "🔄 Refresh",
 
-            [
-              {
-                text:
-                  "🔄 Refresh",
-
-                callback_data:
-                  "admin:dashboard"
-              }
-            ],
-
-            [
-              {
-                text:
-                  "⬅️ Kembali",
-
-                callback_data:
-                  "admin:panel"
-              }
-            ]
-
-          ]
-
+          callback_data:
+            "admin:dashboard"
         }
+      ],
 
+      [
+        {
+          text:
+            "⬅️ Kembali",
+
+          callback_data:
+            "admin:panel"
+        }
+      ]
+
+    ];
+
+
+    if (
+      messageId
+    ) {
+
+      const edited =
+        await editAdminMessage(
+          env,
+          chatId,
+          messageId,
+          text,
+          keyboard
+        );
+
+
+      if (edited) {
+        return;
       }
+
+    }
+
+
+    await sendAdminMessage(
+      env,
+      chatId,
+      text,
+      keyboard
     );
 
   } catch (error) {
@@ -545,7 +701,7 @@ export async function showDashboard(
     );
 
 
-    await sendMessage(
+    await sendAdminMessage(
       env,
       chatId,
 
@@ -558,12 +714,13 @@ export async function showDashboard(
 
 
 // ======================================================
-// FILE MENU
+// DAFTAR FILE
 // ======================================================
 
 export async function showFiles(
   env,
-  chatId
+  chatId,
+  messageId = null
 ) {
 
   try {
@@ -581,33 +738,46 @@ export async function showFiles(
       files.length === 0
     ) {
 
-      await sendMessage(
+      const text =
+        "📁 Belum ada file.";
+
+
+      const keyboard = [
+
+        [
+          {
+            text:
+              "⬅️ Kembali",
+
+            callback_data:
+              "admin:panel"
+          }
+        ]
+
+      ];
+
+
+      if (
+        messageId &&
+        await editAdminMessage(
+          env,
+          chatId,
+          messageId,
+          text,
+          keyboard
+        )
+      ) {
+
+        return;
+
+      }
+
+
+      await sendAdminMessage(
         env,
         chatId,
-
-        "📁 Belum ada file.",
-
-        {
-
-          reply_markup: {
-
-            inline_keyboard: [
-
-              [
-                {
-                  text:
-                    "⬅️ Kembali",
-
-                  callback_data:
-                    "admin:panel"
-                }
-              ]
-
-            ]
-
-          }
-
-        }
+        text,
+        keyboard
       );
 
       return;
@@ -648,17 +818,14 @@ export async function showFiles(
         `Akses: ${Number(file.access_count || 0)}\n`;
 
       text +=
-        `Expired: ${formatDate(file.expires_at)}\n`;
-
-      text +=
-        "\n";
+        `Expired: ${formatDate(file.expires_at)}\n\n`;
 
 
       buttons.push([
 
         {
           text:
-            `🗑️ ${file.file_name || `File ${file.id}`}`,
+            `📁 ${file.file_name || `File ${file.id}`}`,
 
           callback_data:
             `admin:file:${file.id}`
@@ -682,21 +849,27 @@ export async function showFiles(
     ]);
 
 
-    await sendMessage(
+    if (
+      messageId &&
+      await editAdminMessage(
+        env,
+        chatId,
+        messageId,
+        text,
+        buttons
+      )
+    ) {
+
+      return;
+
+    }
+
+
+    await sendAdminMessage(
       env,
       chatId,
       text,
-
-      {
-
-        reply_markup: {
-
-          inline_keyboard:
-            buttons
-
-        }
-
-      }
+      buttons
     );
 
   } catch (error) {
@@ -707,7 +880,7 @@ export async function showFiles(
     );
 
 
-    await sendMessage(
+    await sendAdminMessage(
       env,
       chatId,
 
@@ -726,7 +899,8 @@ export async function showFiles(
 export async function showFileDetail(
   env,
   chatId,
-  fileId
+  fileId,
+  messageId = null
 ) {
 
   try {
@@ -736,13 +910,13 @@ export async function showFileDetail(
         env,
         "files",
 
-        `select=id,file_name,media_type,status,expires_at,created_at,owner_telegram_id,access_count&id=eq.${encodeURIComponent(fileId)}`
+        `select=id,file_name,media_type,status,expires_at,created_at,owner_telegram_id,access_count,token&id=eq.${encodeURIComponent(fileId)}`
       );
 
 
     if (!file) {
 
-      await sendMessage(
+      await sendAdminMessage(
         env,
         chatId,
 
@@ -759,6 +933,7 @@ export async function showFileDetail(
       "📁 DETAIL FILE\n\n" +
 
       `Nama: ${file.file_name || "-"}\n` +
+      `Token: ${file.token || "-"}\n` +
       `ID: ${file.id}\n` +
       `Pemilik: ${file.owner_telegram_id || "-"}\n` +
       `Media: ${file.media_type || "-"}\n` +
@@ -768,7 +943,7 @@ export async function showFileDetail(
       `Expired: ${formatDate(file.expires_at)}`;
 
 
-    const buttons = [];
+    const keyboard = [];
 
 
     if (
@@ -778,7 +953,7 @@ export async function showFileDetail(
       "inactive"
     ) {
 
-      buttons.push([
+      keyboard.push([
 
         {
           text:
@@ -793,7 +968,7 @@ export async function showFileDetail(
     }
 
 
-    buttons.push([
+    keyboard.push([
 
       {
         text:
@@ -806,21 +981,27 @@ export async function showFileDetail(
     ]);
 
 
-    await sendMessage(
+    if (
+      messageId &&
+      await editAdminMessage(
+        env,
+        chatId,
+        messageId,
+        text,
+        keyboard
+      )
+    ) {
+
+      return;
+
+    }
+
+
+    await sendAdminMessage(
       env,
       chatId,
       text,
-
-      {
-
-        reply_markup: {
-
-          inline_keyboard:
-            buttons
-
-        }
-
-      }
+      keyboard
     );
 
   } catch (error) {
@@ -831,7 +1012,7 @@ export async function showFileDetail(
     );
 
 
-    await sendMessage(
+    await sendAdminMessage(
       env,
       chatId,
 
@@ -850,7 +1031,8 @@ export async function showFileDetail(
 export async function disableFile(
   env,
   chatId,
-  fileId
+  fileId,
+  messageId = null
 ) {
 
   try {
@@ -864,7 +1046,11 @@ export async function disableFile(
 
         {
           status:
-            "inactive"
+            "inactive",
+
+          deleted_at:
+            new Date().toISOString()
+
         }
       );
 
@@ -874,7 +1060,7 @@ export async function disableFile(
       !result.length
     ) {
 
-      await sendMessage(
+      await sendAdminMessage(
         env,
         chatId,
 
@@ -886,18 +1072,11 @@ export async function disableFile(
     }
 
 
-    await sendMessage(
-      env,
-      chatId,
-
-      "✅ Link berhasil dinonaktifkan."
-    );
-
-
     await showFileDetail(
       env,
       chatId,
-      fileId
+      fileId,
+      messageId
     );
 
   } catch (error) {
@@ -908,7 +1087,7 @@ export async function disableFile(
     );
 
 
-    await sendMessage(
+    await sendAdminMessage(
       env,
       chatId,
 
@@ -926,7 +1105,8 @@ export async function disableFile(
 
 export async function showUsers(
   env,
-  chatId
+  chatId,
+  messageId = null
 ) {
 
   try {
@@ -965,8 +1145,11 @@ export async function showUsers(
         stats.set(
           key,
           {
-            files: 0,
-            accesses: 0
+            files:
+              0,
+
+            accesses:
+              0
           }
         );
 
@@ -1011,33 +1194,46 @@ export async function showUsers(
       stats.size === 0
     ) {
 
-      await sendMessage(
+      const text =
+        "👤 Belum ada user.";
+
+
+      const keyboard = [
+
+        [
+          {
+            text:
+              "⬅️ Kembali",
+
+            callback_data:
+              "admin:panel"
+          }
+        ]
+
+      ];
+
+
+      if (
+        messageId &&
+        await editAdminMessage(
+          env,
+          chatId,
+          messageId,
+          text,
+          keyboard
+        )
+      ) {
+
+        return;
+
+      }
+
+
+      await sendAdminMessage(
         env,
         chatId,
-
-        "👤 Belum ada user.",
-
-        {
-
-          reply_markup: {
-
-            inline_keyboard: [
-
-              [
-                {
-                  text:
-                    "⬅️ Kembali",
-
-                  callback_data:
-                    "admin:panel"
-                }
-              ]
-
-            ]
-
-          }
-
-        }
+        text,
+        keyboard
       );
 
       return;
@@ -1066,7 +1262,7 @@ export async function showUsers(
       index++;
 
 
-      const isBlocked =
+      const blocked =
         blockedSet.has(
           userId
         );
@@ -1082,19 +1278,19 @@ export async function showUsers(
         `👁 Akses: ${data.accesses}\n`;
 
       text +=
-        `${isBlocked ? "🔴 Diblokir" : "🟢 Aktif"}\n\n`;
+        `${blocked ? "🔴 Diblokir" : "🟢 Aktif"}\n\n`;
 
 
       buttons.push([
 
         {
           text:
-            isBlocked
+            blocked
               ? `🟢 Unblok ${userId}`
               : `🔴 Blokir ${userId}`,
 
           callback_data:
-            isBlocked
+            blocked
               ? `admin:unblock:${userId}`
               : `admin:block:${userId}`
         }
@@ -1117,21 +1313,27 @@ export async function showUsers(
     ]);
 
 
-    await sendMessage(
+    if (
+      messageId &&
+      await editAdminMessage(
+        env,
+        chatId,
+        messageId,
+        text,
+        buttons
+      )
+    ) {
+
+      return;
+
+    }
+
+
+    await sendAdminMessage(
       env,
       chatId,
       text,
-
-      {
-
-        reply_markup: {
-
-          inline_keyboard:
-            buttons
-
-        }
-
-      }
+      buttons
     );
 
   } catch (error) {
@@ -1142,7 +1344,7 @@ export async function showUsers(
     );
 
 
-    await sendMessage(
+    await sendAdminMessage(
       env,
       chatId,
 
@@ -1162,7 +1364,8 @@ export async function blockUser(
   env,
   chatId,
   adminId,
-  userId
+  userId,
+  messageId = null
 ) {
 
   try {
@@ -1171,6 +1374,7 @@ export async function blockUser(
       env,
       "blocked_users",
       {
+
         telegram_user_id:
           Number(userId),
 
@@ -1179,21 +1383,15 @@ export async function blockUser(
 
         reason:
           "Blocked by admin"
+
       }
-    );
-
-
-    await sendMessage(
-      env,
-      chatId,
-
-      `🔴 User ${userId} berhasil diblokir.`
     );
 
 
     await showUsers(
       env,
-      chatId
+      chatId,
+      messageId
     );
 
   } catch (error) {
@@ -1204,7 +1402,7 @@ export async function blockUser(
     );
 
 
-    await sendMessage(
+    await sendAdminMessage(
       env,
       chatId,
 
@@ -1223,7 +1421,8 @@ export async function blockUser(
 export async function unblockUser(
   env,
   chatId,
-  userId
+  userId,
+  messageId = null
 ) {
 
   try {
@@ -1236,17 +1435,10 @@ export async function unblockUser(
     );
 
 
-    await sendMessage(
-      env,
-      chatId,
-
-      `🟢 User ${userId} berhasil di-unblok.`
-    );
-
-
     await showUsers(
       env,
-      chatId
+      chatId,
+      messageId
     );
 
   } catch (error) {
@@ -1257,7 +1449,7 @@ export async function unblockUser(
     );
 
 
-    await sendMessage(
+    await sendAdminMessage(
       env,
       chatId,
 
@@ -1275,7 +1467,8 @@ export async function unblockUser(
 
 export async function showCaptionMenu(
   env,
-  chatId
+  chatId,
+  messageId = null
 ) {
 
   try {
@@ -1377,21 +1570,27 @@ export async function showCaptionMenu(
     ]);
 
 
-    await sendMessage(
+    if (
+      messageId &&
+      await editAdminMessage(
+        env,
+        chatId,
+        messageId,
+        text,
+        buttons
+      )
+    ) {
+
+      return;
+
+    }
+
+
+    await sendAdminMessage(
       env,
       chatId,
       text,
-
-      {
-
-        reply_markup: {
-
-          inline_keyboard:
-            buttons
-
-        }
-
-      }
+      buttons
     );
 
   } catch (error) {
@@ -1402,7 +1601,7 @@ export async function showCaptionMenu(
     );
 
 
-    await sendMessage(
+    await sendAdminMessage(
       env,
       chatId,
 
@@ -1433,7 +1632,7 @@ export async function startAddCaption(
   );
 
 
-  await sendMessage(
+  await sendAdminMessage(
     env,
     chatId,
 
@@ -1451,7 +1650,8 @@ export async function startAddCaption(
 export async function deleteCaption(
   env,
   chatId,
-  captionId
+  captionId,
+  messageId = null
 ) {
 
   try {
@@ -1464,17 +1664,10 @@ export async function deleteCaption(
     );
 
 
-    await sendMessage(
-      env,
-      chatId,
-
-      "✅ Caption berhasil dihapus."
-    );
-
-
     await showCaptionMenu(
       env,
-      chatId
+      chatId,
+      messageId
     );
 
   } catch (error) {
@@ -1485,7 +1678,7 @@ export async function deleteCaption(
     );
 
 
-    await sendMessage(
+    await sendAdminMessage(
       env,
       chatId,
 
@@ -1503,7 +1696,8 @@ export async function deleteCaption(
 
 export async function showAdmins(
   env,
-  chatId
+  chatId,
+  messageId = null
 ) {
 
   const raw =
@@ -1517,7 +1711,8 @@ export async function showAdmins(
       ? raw
           .split(",")
           .map(
-            id => id.trim()
+            id =>
+              id.trim()
           )
           .filter(Boolean)
       : [];
@@ -1556,38 +1751,45 @@ export async function showAdmins(
 
 
   text +=
-    "\nMulti-admin menggunakan ADMIN_IDS di Cloudflare Worker.\n\n" +
-
-    "Contoh:\n" +
-    "ADMIN_IDS=123456789,987654321";
+    "\nMulti-admin menggunakan ADMIN_IDS di Cloudflare Worker.";
 
 
-  await sendMessage(
+  const keyboard = [
+
+    [
+      {
+        text:
+          "⬅️ Kembali",
+
+        callback_data:
+          "admin:panel"
+      }
+    ]
+
+  ];
+
+
+  if (
+    messageId &&
+    await editAdminMessage(
+      env,
+      chatId,
+      messageId,
+      text,
+      keyboard
+    )
+  ) {
+
+    return;
+
+  }
+
+
+  await sendAdminMessage(
     env,
     chatId,
     text,
-
-    {
-
-      reply_markup: {
-
-        inline_keyboard: [
-
-          [
-            {
-              text:
-                "⬅️ Kembali",
-
-              callback_data:
-                "admin:panel"
-            }
-          ]
-
-        ]
-
-      }
-
-    }
+    keyboard
   );
 
 }
