@@ -3,7 +3,6 @@
 // ======================================================
 
 import {
-  select,
   update
 } from "../database/supabase.js";
 
@@ -13,18 +12,19 @@ import {
 
 
 // ======================================================
-// EXPIRE FILES
+// EXPIRE + CLEANUP FILES
 // ======================================================
 //
-// Tugas:
+// Menangani:
 //
-// 1. Ambil file active yang memiliki expires_at
-// 2. Cek expired berdasarkan waktu Worker
-// 3. Hapus pesan file dari Telegram jika ada
-// 4. Tandai file sebagai expired
+// 1. File ACTIVE yang sudah expired
+// 2. File EXPIRED yang belum berhasil dihapus Telegram
 //
-// Menggunakan database/supabase.js
-// sehingga menggunakan SUPABASE_SERVICE_ROLE_KEY.
+// Penting:
+// Jangan hanya mencari status=active.
+// File yang sebelumnya sudah ditandai expired tetapi
+// gagal dihapus Telegram harus dicoba kembali.
+//
 // ======================================================
 
 export async function expireFiles(
@@ -39,53 +39,192 @@ export async function expireFiles(
   try {
 
     // ==================================================
+    // CEK ENV
+    // ==================================================
+
+    console.log(
+      "SUPABASE_URL:",
+      env.SUPABASE_URL
+        ? "ADA"
+        : "TIDAK ADA"
+    );
+
+    console.log(
+      "SUPABASE_SERVICE_ROLE_KEY:",
+      env.SUPABASE_SERVICE_ROLE_KEY
+        ? "ADA"
+        : "TIDAK ADA"
+    );
+
+    console.log(
+      "TELEGRAM_BOT_TOKEN:",
+      env.TELEGRAM_BOT_TOKEN
+        ? "ADA"
+        : "TIDAK ADA"
+    );
+
+
+    if (!env.SUPABASE_URL) {
+
+      throw new Error(
+        "SUPABASE_URL tidak tersedia."
+      );
+
+    }
+
+
+    if (!env.SUPABASE_SERVICE_ROLE_KEY) {
+
+      throw new Error(
+        "SUPABASE_SERVICE_ROLE_KEY tidak tersedia."
+      );
+
+    }
+
+
+    if (!env.TELEGRAM_BOT_TOKEN) {
+
+      throw new Error(
+        "TELEGRAM_BOT_TOKEN tidak tersedia."
+      );
+
+    }
+
+
+    // ==================================================
     // WAKTU SEKARANG
     // ==================================================
 
     const now =
-      new Date();
+      new Date().toISOString();
 
 
     console.log(
-      "EXPIRY NOW UTC:",
-      now.toISOString()
-    );
-
-
-    console.log(
-      "EXPIRY NOW MS:",
-      now.getTime()
+      "WORKER NOW:",
+      now
     );
 
 
     // ==================================================
-    // AMBIL FILE ACTIVE
+    // QUERY
+    // ==================================================
+    //
+    // Ambil:
+    //
+    // A. ACTIVE yang sudah expired
+    //
+    // B. EXPIRED yang belum deleted_at
+    //
+    // B diperlukan supaya pesan Telegram lama yang
+    // sebelumnya gagal dihapus bisa dicoba lagi.
+    //
     // ==================================================
 
-    console.log(
-      "MENGAMBIL FILE ACTIVE..."
-    );
-
-
-    const files =
-      await select(
-        env,
-        "files",
-        [
-          "status=eq.active",
-          "expires_at=not.is.null",
-          "select=id,token,status,expires_at,sent_chat_id,sent_message_id",
-          "order=expires_at.asc"
-        ].join("&")
+    const baseUrl =
+      String(
+        env.SUPABASE_URL
+      ).replace(
+        /\/+$/,
+        ""
       );
 
 
-    // ==================================================
-    // CEK HASIL QUERY
-    // ==================================================
+    const query =
+      [
+        "select=*",
+        "or=" +
+          encodeURIComponent(
+            `(and(status.eq.active,expires_at.not.is.null,expires_at.lte.${now}),and(status.eq.expired,deleted_at.is.null))`
+          )
+      ].join("&");
+
+
+    const queryUrl =
+      `${baseUrl}/rest/v1/files?${query}`;
+
 
     console.log(
-      "JUMLAH FILE ACTIVE:",
+      "EXPIRY QUERY:",
+      queryUrl
+    );
+
+
+    // ==================================================
+    // REQUEST SUPABASE
+    // ==================================================
+
+    const response =
+      await fetch(
+        queryUrl,
+        {
+
+          method:
+            "GET",
+
+          headers: {
+
+            apikey:
+              env.SUPABASE_SERVICE_ROLE_KEY,
+
+            Authorization:
+              `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+
+            Accept:
+              "application/json"
+
+          }
+
+        }
+      );
+
+
+    console.log(
+      "SUPABASE STATUS:",
+      response.status
+    );
+
+
+    const responseText =
+      await response.text();
+
+
+    console.log(
+      "SUPABASE RESPONSE:",
+      responseText
+    );
+
+
+    if (!response.ok) {
+
+      throw new Error(
+        `Supabase expiry query error ` +
+        `HTTP ${response.status}: ` +
+        responseText
+      );
+
+    }
+
+
+    let files;
+
+    try {
+
+      files =
+        JSON.parse(
+          responseText
+        );
+
+    } catch {
+
+      throw new Error(
+        "Response Supabase bukan JSON."
+      );
+
+    }
+
+
+    console.log(
+      "FILES DITEMUKAN:",
       Array.isArray(files)
         ? files.length
         : "BUKAN ARRAY"
@@ -93,26 +232,12 @@ export async function expireFiles(
 
 
     if (
-      !Array.isArray(files)
-    ) {
-
-      throw new Error(
-        "Response tabel files bukan array."
-      );
-
-    }
-
-
-    // ==================================================
-    // TIDAK ADA FILE ACTIVE
-    // ==================================================
-
-    if (
+      !Array.isArray(files) ||
       files.length === 0
     ) {
 
       console.log(
-        "TIDAK ADA FILE ACTIVE DENGAN EXPIRES_AT."
+        "TIDAK ADA FILE YANG PERLU DIPROSES."
       );
 
       console.log(
@@ -120,9 +245,6 @@ export async function expireFiles(
       );
 
       return {
-
-        ok:
-          true,
 
         checked:
           0,
@@ -138,129 +260,8 @@ export async function expireFiles(
     }
 
 
-    // ==================================================
-    // TAMPILKAN FILE YANG DICEK
-    // ==================================================
-
-    for (
-      const file of files
-    ) {
-
-      console.log(
-        "FILE:",
-        {
-          id:
-            file.id,
-
-          token:
-            file.token,
-
-          status:
-            file.status,
-
-          expires_at:
-            file.expires_at,
-
-          sent_chat_id:
-            file.sent_chat_id,
-
-          sent_message_id:
-            file.sent_message_id
-        }
-      );
-
-    }
-
-
-    // ==================================================
-    // CARI YANG SUDAH EXPIRED
-    // ==================================================
-
-    const expiredFiles =
-      files.filter(
-        file => {
-
-          if (
-            !file.expires_at
-          ) {
-
-            return false;
-
-          }
-
-
-          const expiresTime =
-            new Date(
-              file.expires_at
-            ).getTime();
-
-
-          if (
-            Number.isNaN(
-              expiresTime
-            )
-          ) {
-
-            console.error(
-              "EXPIRES_AT INVALID:",
-              file.id,
-              file.expires_at
-            );
-
-            return false;
-
-          }
-
-
-          return (
-            expiresTime <=
-            now.getTime()
-          );
-
-        }
-      );
-
-
-    console.log(
-      "JUMLAH FILE EXPIRED:",
-      expiredFiles.length
-    );
-
-
-    // ==================================================
-    // TIDAK ADA YANG EXPIRED
-    // ==================================================
-
-    if (
-      expiredFiles.length === 0
-    ) {
-
-      console.log(
-        "BELUM ADA FILE YANG EXPIRED."
-      );
-
-      console.log(
-        "========== EXPIRY END =========="
-      );
-
-      return {
-
-        ok:
-          true,
-
-        checked:
-          files.length,
-
-        expired:
-          0,
-
-        deleted:
-          0
-
-      };
-
-    }
-
+    let checkedCount =
+      0;
 
     let expiredCount =
       0;
@@ -270,19 +271,22 @@ export async function expireFiles(
 
 
     // ==================================================
-    // PROSES FILE EXPIRED
+    // PROSES SATU PER SATU
     // ==================================================
 
     for (
-      const file of expiredFiles
+      const file of files
     ) {
 
+      checkedCount++;
+
+
       console.log(
-        "================================"
+        "----------------------------------------"
       );
 
       console.log(
-        "MEMPROSES FILE EXPIRED:",
+        "PROCESS FILE:",
         file.id
       );
 
@@ -292,14 +296,64 @@ export async function expireFiles(
       );
 
       console.log(
+        "STATUS:",
+        file.status
+      );
+
+      console.log(
         "EXPIRES AT:",
         file.expires_at
       );
 
+      console.log(
+        "SENT CHAT:",
+        file.sent_chat_id
+      );
 
-      // ================================================
+      console.log(
+        "SENT MESSAGE:",
+        file.sent_message_id
+      );
+
+      console.log(
+        "DELETED AT:",
+        file.deleted_at
+      );
+
+
+      // =================================================
+      // TENTUKAN SUDAH EXPIRED
+      // =================================================
+
+      const isExpired =
+        file.status === "expired" ||
+        (
+          file.status === "active" &&
+          file.expires_at &&
+          new Date(
+            file.expires_at
+          ).getTime() <= Date.now()
+        );
+
+
+      if (!isExpired) {
+
+        console.log(
+          "FILE BELUM EXPIRED."
+        );
+
+        continue;
+
+      }
+
+
+      // =================================================
       // HAPUS PESAN TELEGRAM
-      // ================================================
+      // =================================================
+
+      let telegramDeleted =
+        false;
+
 
       if (
         file.sent_chat_id !== null &&
@@ -309,20 +363,13 @@ export async function expireFiles(
       ) {
 
         console.log(
-          "MENGHAPUS PESAN TELEGRAM:",
-          {
-            chat_id:
-              file.sent_chat_id,
-
-            message_id:
-              file.sent_message_id
-          }
+          "MENCOBA DELETE TELEGRAM..."
         );
 
 
         try {
 
-          const deleted =
+          telegramDeleted =
             await deleteBotFile(
               env,
               file.sent_chat_id,
@@ -331,58 +378,62 @@ export async function expireFiles(
 
 
           console.log(
-            "HASIL DELETE TELEGRAM:",
-            deleted
+            "TELEGRAM DELETE RESULT:",
+            telegramDeleted
           );
 
-
-          if (
-            deleted === true
-          ) {
-
-            deletedCount++;
-
-          }
-
-        } catch (
-          telegramError
-        ) {
+        } catch (error) {
 
           console.error(
-            "DELETE TELEGRAM ERROR:",
-            telegramError?.message ||
-            String(telegramError)
+            "TELEGRAM DELETE ERROR:",
+            error?.message ||
+            error
           );
+
+          console.error(
+            "TELEGRAM DELETE STACK:",
+            error?.stack
+          );
+
+          telegramDeleted =
+            false;
 
         }
 
       } else {
 
         console.log(
-          "FILE TIDAK MEMPUNYAI PESAN TELEGRAM."
+          "TIDAK ADA sent_chat_id / sent_message_id."
         );
 
       }
 
 
-      // ================================================
-      // TANDAI EXPIRED
-      // ================================================
+      // =================================================
+      // JIKA BERHASIL DIHAPUS
+      // =================================================
 
-      console.log(
-        "MENANDAI DATABASE SEBAGAI EXPIRED..."
-      );
+      if (telegramDeleted) {
+
+        deletedCount++;
 
 
-      try {
+        console.log(
+          "PESAN TELEGRAM BERHASIL DIHAPUS."
+        );
 
-        const result =
+
+        // -----------------------------------------------
+        // Tandai expired + deleted_at
+        // -----------------------------------------------
+
+        const updateResult =
           await update(
             env,
             "files",
             `id=eq.${encodeURIComponent(
               file.id
-            )}&status=eq.active`,
+            )}`,
             {
 
               status:
@@ -396,27 +447,76 @@ export async function expireFiles(
 
 
         console.log(
-          "HASIL UPDATE DATABASE:",
-          result
+          "DATABASE UPDATED:",
+          updateResult
         );
 
 
         expiredCount++;
 
 
-        console.log(
-          "FILE BERHASIL DITANDAI EXPIRED:",
-          file.id
-        );
+        continue;
 
-      } catch (
-        updateError
+      }
+
+
+      // =================================================
+      // TELEGRAM TIDAK BERHASIL DIHAPUS
+      // =================================================
+      //
+      // Jangan mengisi deleted_at.
+      //
+      // Dengan begitu cron berikutnya akan mencoba lagi.
+      //
+      // =================================================
+
+      console.log(
+        "PESAN TELEGRAM BELUM BERHASIL DIHAPUS."
+      );
+
+
+      // =================================================
+      // JIKA FILE MASIH ACTIVE
+      // TANDAI EXPIRED
+      // =================================================
+
+      if (
+        file.status === "active"
       ) {
 
-        console.error(
-          "UPDATE EXPIRED ERROR:",
-          updateError?.message ||
-          String(updateError)
+        console.log(
+          "MENANDAI FILE SEBAGAI EXPIRED..."
+        );
+
+
+        const updateResult =
+          await update(
+            env,
+            "files",
+            `id=eq.${encodeURIComponent(
+              file.id
+            )}`,
+            {
+
+              status:
+                "expired"
+
+            }
+          );
+
+
+        console.log(
+          "STATUS EXPIRED RESULT:",
+          updateResult
+        );
+
+
+        expiredCount++;
+
+      } else {
+
+        console.log(
+          "FILE SUDAH EXPIRED, MENUNGGU RETRY CRON."
         );
 
       }
@@ -428,36 +528,10 @@ export async function expireFiles(
     // HASIL AKHIR
     // ==================================================
 
-    console.log(
-      "================================"
-    );
-
-    console.log(
-      "EXPIRY SELESAI:",
-      {
-        checked:
-          files.length,
-
-        expired:
-          expiredCount,
-
-        deleted:
-          deletedCount
-      }
-    );
-
-    console.log(
-      "========== EXPIRY END =========="
-    );
-
-
-    return {
-
-      ok:
-        true,
+    const result = {
 
       checked:
-        files.length,
+        checkedCount,
 
       expired:
         expiredCount,
@@ -467,13 +541,25 @@ export async function expireFiles(
 
     };
 
-  } catch (
-    error
-  ) {
 
-    // ==================================================
-    // ERROR
-    // ==================================================
+    console.log(
+      "========================================"
+    );
+
+    console.log(
+      "EXPIRY RESULT:",
+      result
+    );
+
+    console.log(
+      "========== EXPIRY END =========="
+    );
+
+
+    return result;
+
+
+  } catch (error) {
 
     console.error(
       "========== EXPIRY ERROR =========="
@@ -481,14 +567,17 @@ export async function expireFiles(
 
     console.error(
       "ERROR MESSAGE:",
-      error?.message ||
-      String(error)
+      error?.message
     );
 
     console.error(
       "ERROR STACK:",
-      error?.stack ||
-      ""
+      error?.stack
+    );
+
+    console.error(
+      "ERROR FULL:",
+      error
     );
 
     console.error(
@@ -500,4 +589,4 @@ export async function expireFiles(
 
   }
 
-}
+            }
