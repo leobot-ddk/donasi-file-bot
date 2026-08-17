@@ -202,28 +202,68 @@ export async function handleUpdate(
 
 
     // ==================================================
-    // ADMIN COMMAND
-    // ==================================================
+// ADMIN COMMAND
+// ==================================================
 
-    if (
-      typeof message.text === "string" &&
-      message.text
-        .trim()
-        .startsWith("/")
-    ) {
+if (
+  typeof message.text === "string" &&
+  message.text
+    .trim()
+    .startsWith("/")
+) {
 
-      if (admin) {
+  const command =
+    message.text
+      .trim()
+      .split(/\s+/)[0]
+      .toLowerCase();
 
-        await handleAdminCommand(
-          message,
-          env
-        );
 
-        return;
+  // ================================================
+  // COMMAND ADMIN
+  // ================================================
 
-      }
+  if (
+    command === "/admin" ||
+    command === "/panel" ||
+    command === "/files" ||
+    command === "/users" ||
+    command === "/stats"
+  ) {
+
+    // ==============================================
+    // BUKAN ADMIN
+    // ==============================================
+
+    if (!admin) {
+
+      await sendMessage(
+        env,
+        chatId,
+
+        "❌ Akses ditolak.\n\n" +
+        "Perintah ini hanya dapat digunakan oleh admin."
+      );
+
+      return;
 
     }
+
+
+    // ==============================================
+    // ADMIN
+    // ==============================================
+
+    await handleAdminCommand(
+      message,
+      env
+    );
+
+    return;
+
+  }
+
+}
 
 
     // ==================================================
