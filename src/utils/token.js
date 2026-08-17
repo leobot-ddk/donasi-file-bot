@@ -1,21 +1,30 @@
 // ======================================================
-// FILE TOKEN
+// SHORT FILE TOKEN
 // ======================================================
 
 export function createFileToken() {
 
+  const chars =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
+    "abcdefghijklmnopqrstuvwxyz" +
+    "0123456789";
+
   const bytes =
-    new Uint8Array(16);
+    crypto.getRandomValues(
+      new Uint8Array(8)
+    );
 
-  crypto.getRandomValues(bytes);
+  let token = "";
 
-  return Array.from(bytes)
-    .map(
-      byte =>
-        byte
-          .toString(16)
-          .padStart(2, "0")
-    )
-    .join("");
+  for (const byte of bytes) {
+
+    token +=
+      chars[
+        byte % chars.length
+      ];
+
+  }
+
+  return token;
 
 }
