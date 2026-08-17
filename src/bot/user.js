@@ -44,7 +44,7 @@ function createSessionId() {
 
 
 // ======================================================
-// GET SESSION
+// GET SESSION TERBARU USER
 // ======================================================
 
 export async function getUserState(
@@ -109,6 +109,13 @@ export async function handleMedia(
 
 
   if (!media) {
+
+    await sendMessage(
+      env,
+      chatId,
+      "❌ Jenis file tidak didukung."
+    );
+
     return;
   }
 
@@ -522,6 +529,15 @@ export async function createFileFromSession(
   }
 
 
+  // ====================================================
+  // INSERT KE TABEL files
+  // ====================================================
+  //
+  // Hanya menggunakan kolom yang memang ada
+  // di schema tabel files.
+  //
+  // ====================================================
+
   const rows =
     await insert(
       env,
@@ -532,12 +548,6 @@ export async function createFileFromSession(
 
         owner_telegram_id:
           session.telegram_id,
-
-        source_chat_id:
-          session.source_chat_id,
-
-        source_message_id:
-          session.source_message_id,
 
         media_type:
           session.media_type,
@@ -559,6 +569,9 @@ export async function createFileFromSession(
 
         caption_user:
           session.caption_user ||
+          null,
+
+        caption_admin:
           null,
 
         protect_content:
@@ -624,9 +637,15 @@ export async function finishFile(
   }
 
 
+  // ====================================================
+  // DURASI
+  // ====================================================
+
   if (
-    session.duration_seconds === undefined ||
-    session.duration_seconds === null
+    session.duration_seconds ===
+      undefined ||
+    session.duration_seconds ===
+      null
   ) {
 
     throw new Error(
@@ -636,12 +655,20 @@ export async function finishFile(
   }
 
 
+  // ====================================================
+  // BUAT FILE
+  // ====================================================
+
   const file =
     await createFileFromSession(
       env,
       session
     );
 
+
+  // ====================================================
+  // BOT USERNAME
+  // ====================================================
 
   const botUsername =
     String(
@@ -662,11 +689,19 @@ export async function finishFile(
   }
 
 
+  // ====================================================
+  // LINK
+  // ====================================================
+
   const link =
     `https://t.me/${botUsername}?start=${encodeURIComponent(
       file.token
     )}`;
 
+
+  // ====================================================
+  // KIRIM LINK KE USER
+  // ====================================================
 
   await sendMessage(
     env,
@@ -685,7 +720,7 @@ export async function finishFile(
 
 
   // ====================================================
-  // SESSION BOLEH DIHAPUS SETELAH FILE BERHASIL DIBUAT
+  // HAPUS SESSION
   // ====================================================
 
   await remove(
@@ -698,8 +733,11 @@ export async function finishFile(
 
 
   return {
+
     file,
+
     link
+
   };
 
 }
