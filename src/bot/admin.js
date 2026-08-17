@@ -568,12 +568,24 @@ export async function showDashboard(
 
 
     const todayString =
-      now
-        .toISOString()
-        .slice(
-          0,
-          10
-        );
+      new Intl.DateTimeFormat(
+        "en-CA",
+        {
+          timeZone:
+            "Asia/Jakarta",
+
+          year:
+            "numeric",
+
+          month:
+            "2-digit",
+
+          day:
+            "2-digit"
+        }
+      ).format(
+        now
+      );
 
 
     for (
@@ -614,15 +626,40 @@ export async function showDashboard(
 
 
       if (
-        file.created_at &&
-        String(
-          file.created_at
-        ).startsWith(
-          todayString
-        )
+        file.created_at
       ) {
 
-        today++;
+        const fileDate =
+          new Intl.DateTimeFormat(
+            "en-CA",
+            {
+              timeZone:
+                "Asia/Jakarta",
+
+              year:
+                "numeric",
+
+              month:
+                "2-digit",
+
+              day:
+                "2-digit"
+            }
+          ).format(
+            new Date(
+              file.created_at
+            )
+          );
+
+
+        if (
+          fileDate ===
+          todayString
+        ) {
+
+          today++;
+
+        }
 
       }
 
@@ -714,15 +751,12 @@ export async function showDashboard(
 
 
 // ======================================================
-// DAFTAR FILE
+// DAFTAR FILE AKTIF
 // ======================================================
 //
-// Hanya menampilkan file yang:
-// - status = active
-// - belum expired
+// Hanya file dengan status active yang ditampilkan.
 //
-// File expired tetap ada di database agar dashboard
-// tetap dapat menghitung total dan expired.
+// File expired / inactive tidak ditampilkan.
 //
 // ======================================================
 
@@ -738,64 +772,18 @@ export async function showFiles(
       await select(
         env,
         "files",
+
         "select=id,file_name,media_type,status,expires_at,created_at,owner_telegram_id,access_count&status=eq.active&order=id.desc&limit=30"
       );
 
 
-    const now =
-      Date.now();
-
-
-    const activeFiles =
-      (files || []).filter(
-        file => {
-
-          if (
-            String(
-              file.status || ""
-            ).toLowerCase() !==
-            "active"
-          ) {
-
-            return false;
-
-          }
-
-
-          // File tanpa expiry = selamanya
-
-          if (
-            !file.expires_at
-          ) {
-
-            return true;
-
-          }
-
-
-          const expiresAt =
-            new Date(
-              file.expires_at
-            ).getTime();
-
-
-          return (
-            Number.isFinite(
-              expiresAt
-            ) &&
-            expiresAt > now
-          );
-
-        }
-      );
-
-
     if (
-      activeFiles.length === 0
+      !files ||
+      files.length === 0
     ) {
 
       const text =
-        "📁 Belum ada file aktif.";
+        "📁 Tidak ada file aktif.";
 
 
       const keyboard = [
@@ -850,12 +838,12 @@ export async function showFiles(
 
     for (
       let i = 0;
-      i < activeFiles.length;
+      i < files.length;
       i++
     ) {
 
       const file =
-        activeFiles[i];
+        files[i];
 
 
       text +=
@@ -863,9 +851,6 @@ export async function showFiles(
 
       text +=
         `ID: ${file.id}\n`;
-
-      text +=
-        `Status: ${file.status || "-"}\n`;
 
       text +=
         `Pemilik: ${file.owner_telegram_id || "-"}\n`;
@@ -966,7 +951,7 @@ export async function showFileDetail(
         env,
         "files",
 
-        `select=id,file_name,media_type,status,expires_at,created_at,owner_telegram_id,access_count,token&id=eq.${encodeURIComponent(fileId)}`
+        `select=id,file_name,media_type,status,expires_at,created_at,owner_telegram_id,access_count,token,sent_chat_id,sent_message_id&id=eq.${encodeURIComponent(fileId)}`
       );
 
 
@@ -1085,90 +1070,16 @@ export async function showFileDetail(
 
 
 // ======================================================
-// DISABLE FILE
+// DELETE FILE
 // ======================================================
 //
-// Fungsi lama tetap dipertahankan untuk kompatibilitas.
-// Tombol panel sekarang menggunakan DELETE PERMANEN.
+// Yang dihapus:
+// 1. Pesan/file yang dikirim BOT ke user.
+// 2. Data file dari database.
 //
-// ======================================================
-
-export async function disableFile(
-  env,
-  chatId,
-  fileId,
-  messageId = null
-) {
-
-  try {
-
-    const result =
-      await update(
-        env,
-        "files",
-
-        `id=eq.${encodeURIComponent(fileId)}`,
-
-        {
-          status:
-            "inactive",
-
-          deleted_at:
-            new Date().toISOString()
-
-        }
-      );
-
-
-    if (
-      !result ||
-      !result.length
-    ) {
-
-      await sendAdminMessage(
-        env,
-        chatId,
-
-        "❌ File tidak ditemukan."
-      );
-
-      return;
-
-    }
-
-
-    await showFileDetail(
-      env,
-      chatId,
-      fileId,
-      messageId
-    );
-
-  } catch (error) {
-
-    console.error(
-      "ADMIN DISABLE FILE ERROR:",
-      error
-    );
-
-
-    await sendAdminMessage(
-      env,
-      chatId,
-
-      "❌ Gagal menonaktifkan link."
-    );
-
-  }
-
-}
-
-
-// ======================================================
-// DELETE FILE PERMANEN
-// ======================================================
-//
-// Data file benar-benar dihapus dari database.
+// Yang TIDAK dihapus:
+// - File yang sudah dicopy ke grup admin.
+// - File asli di Telegram.
 //
 // ======================================================
 
@@ -1186,7 +1097,7 @@ export async function deleteFile(
         env,
         "files",
 
-        `select=id,file_name&id=eq.${encodeURIComponent(fileId)}`
+        `select=id,file_name,status,sent_chat_id,sent_message_id&id=eq.${encodeURIComponent(fileId)}`
       );
 
 
@@ -1204,29 +1115,73 @@ export async function deleteFile(
     }
 
 
-    const result =
-      await remove(
-        env,
-        "files",
-
-        `id=eq.${encodeURIComponent(fileId)}`
-      );
-
+    // ==================================================
+    // HAPUS PESAN FILE DARI USER
+    // ==================================================
 
     if (
-      result === null ||
-      result === undefined
+      file.sent_chat_id &&
+      file.sent_message_id
     ) {
 
-      console.warn(
-        "ADMIN DELETE FILE: hasil remove kosong.",
-        {
-          fileId
-        }
-      );
+      try {
+
+        await telegram(
+          env,
+          "deleteMessage",
+          {
+
+            chat_id:
+              file.sent_chat_id,
+
+            message_id:
+              file.sent_message_id
+
+          }
+        );
+
+
+        console.log(
+          "PESAN FILE USER BERHASIL DIHAPUS:",
+          {
+            fileId:
+              file.id,
+
+            sentChatId:
+              file.sent_chat_id,
+
+            sentMessageId:
+              file.sent_message_id
+          }
+        );
+
+      } catch (error) {
+
+        console.error(
+          "GAGAL MENGHAPUS PESAN FILE USER:",
+          error
+        );
+
+      }
 
     }
 
+
+    // ==================================================
+    // HAPUS DATA FILE DARI DATABASE
+    // ==================================================
+
+    await remove(
+      env,
+      "files",
+
+      `id=eq.${encodeURIComponent(fileId)}`
+    );
+
+
+    // ==================================================
+    // UPDATE PANEL
+    // ==================================================
 
     await showFiles(
       env,
@@ -1246,7 +1201,7 @@ export async function deleteFile(
       env,
       chatId,
 
-      "❌ Gagal menghapus link."
+      "❌ Gagal menghapus file."
     );
 
   }
@@ -1417,7 +1372,7 @@ export async function showUsers(
       index++;
 
 
-      const blocked =
+      const isBlocked =
         blockedSet.has(
           userId
         );
@@ -1433,19 +1388,19 @@ export async function showUsers(
         `👁 Akses: ${data.accesses}\n`;
 
       text +=
-        `${blocked ? "🔴 Diblokir" : "🟢 Aktif"}\n\n`;
+        `${isBlocked ? "🔴 Diblokir" : "🟢 Aktif"}\n\n`;
 
 
       buttons.push([
 
         {
           text:
-            blocked
+            isBlocked
               ? `🟢 Unblok ${userId}`
               : `🔴 Blokir ${userId}`,
 
           callback_data:
-            blocked
+            isBlocked
               ? `admin:unblock:${userId}`
               : `admin:block:${userId}`
         }
@@ -1607,7 +1562,6 @@ export async function unblockUser(
     await sendAdminMessage(
       env,
       chatId,
-
       "❌ Gagal melakukan unblock."
     );
 
