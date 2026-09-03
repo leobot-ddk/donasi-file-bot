@@ -1455,6 +1455,7 @@ export async function finishFile(
       channelId,
       channelText,
       );
+  }
 
 
   // ====================================================
