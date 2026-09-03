@@ -1454,33 +1454,7 @@ export async function finishFile(
       env,
       channelId,
       channelText,
-      {
-
-        reply_markup: {
-
-          inline_keyboard: [
-
-            [
-
-              {
-                text:
-                  "🔗 Buka Link",
-
-                url:
-                  link
-
-              }
-
-            ]
-
-          ]
-
-        }
-
-      }
-    );
-
-  }
+      );
 
 
   // ====================================================
