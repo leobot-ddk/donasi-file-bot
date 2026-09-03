@@ -843,8 +843,8 @@ export async function askCaption(
     env,
     chatId,
 
-    "📝 Kirim caption.\n\n" +
-    "Atau pilih tanpa caption.",
+    "📝 Tambah caption.\n\n" +
+    "Ketik caption kamu dan hastag #cewe atau #cowo.",
 
     {
 
