@@ -112,6 +112,54 @@ export default {
         }
 
 
+        const keyParts = String(
+  env.SUPABASE_SERVICE_ROLE_KEY
+).split(".");
+
+let jwtInfo = {};
+
+try {
+  if (keyParts.length !== 3) {
+    throw new Error("Key bukan format JWT");
+  }
+
+  const payload = JSON.parse(
+    atob(
+      keyParts[1]
+        .replace(/-/g, "+")
+        .replace(/_/g, "/")
+        .padEnd(
+          Math.ceil(keyParts[1].length / 4) * 4,
+          "="
+        )
+    )
+  );
+
+  const now = Math.floor(Date.now() / 1000);
+
+  jwtInfo = {
+    role: payload.role || null,
+    issued_at: payload.iat
+      ? new Date(payload.iat * 1000).toISOString()
+      : null,
+    expires_at: payload.exp
+      ? new Date(payload.exp * 1000).toISOString()
+      : null,
+    worker_time: new Date().toISOString(),
+    issued_ahead_seconds: payload.iat
+      ? payload.iat - now
+      : null
+  };
+
+} catch (error) {
+  jwtInfo = {
+    error: error.message
+  };
+}
+
+console.log("JWT DIAGNOSTIC:", jwtInfo);
+        
+
         // ----------------------------------------------
         // QUERY FILES
         // ----------------------------------------------
