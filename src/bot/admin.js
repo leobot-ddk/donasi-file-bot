@@ -1216,7 +1216,8 @@ export async function deleteFile(
 export async function showUsers(
   env,
   chatId,
-  messageId = null
+  messageId = null,
+  page = 0
 ) {
 
   try {
@@ -1351,100 +1352,64 @@ export async function showUsers(
     }
 
 
-    let text =
-      "👤 DAFTAR USER\n\n";
+    const users = Array.from(stats.entries());
+    const pageSize = 10;
+    const totalPages = Math.max(1, Math.ceil(users.length / pageSize));
+    const currentPage = Math.min(Math.max(0, Number(page) || 0), totalPages - 1);
+    const startIndex = currentPage * pageSize;
+    const pageUsers = users.slice(startIndex, startIndex + pageSize);
 
+    let text = `👤 DAFTAR USER\n`;
+    text += `Halaman ${currentPage + 1}/${totalPages} • Total ${users.length} user\n\n`;
 
     const buttons = [];
 
+    for (let i = 0; i < pageUsers.length; i++) {
+      const [userId, data] = pageUsers[i];
+      const isBlocked = blockedSet.has(userId);
+      const index = startIndex + i + 1;
 
-    let index =
-      0;
+      text += `${index}. ${userId}\n`;
+      text += `📁 File: ${data.files}\n`;
+      text += `👁 Akses: ${data.accesses}\n`;
+      text += `${isBlocked ? "🔴 Diblokir" : "🟢 Aktif"}\n\n`;
 
-
-    for (
-      const [
-        userId,
-        data
-      ] of stats
-    ) {
-
-      index++;
-
-
-      const isBlocked =
-        blockedSet.has(
-          userId
-        );
-
-
-      text +=
-        `${index}. ${userId}\n`;
-
-      text +=
-        `📁 File: ${data.files}\n`;
-
-      text +=
-        `👁 Akses: ${data.accesses}\n`;
-
-      text +=
-        `${isBlocked ? "🔴 Diblokir" : "🟢 Aktif"}\n\n`;
-
-
-      buttons.push([
-
-        {
-          text:
-            isBlocked
-              ? `🟢 Unblok ${userId}`
-              : `🔴 Blokir ${userId}`,
-
-          callback_data:
-            isBlocked
-              ? `admin:unblock:${userId}`
-              : `admin:block:${userId}`
-        }
-
-      ]);
-
+      buttons.push([{
+        text: isBlocked ? `🟢 Unblok ${userId}` : `🔴 Blokir ${userId}`,
+        callback_data: isBlocked
+          ? `admin:unblock:${userId}:${currentPage}`
+          : `admin:block:${userId}:${currentPage}`
+      }]);
     }
 
+    const navigation = [];
+    if (currentPage > 0) {
+      navigation.push({
+        text: "⬅️ Sebelumnya",
+        callback_data: `admin:users:page:${currentPage - 1}`
+      });
+    }
+    if (currentPage < totalPages - 1) {
+      navigation.push({
+        text: "Berikutnya ➡️",
+        callback_data: `admin:users:page:${currentPage + 1}`
+      });
+    }
+    if (navigation.length) buttons.push(navigation);
 
-    buttons.push([
-
-      {
-        text:
-          "⬅️ Kembali",
-
-        callback_data:
-          "admin:panel"
-      }
-
-    ]);
-
+    buttons.push([{
+      text: "⬅️ Kembali",
+      callback_data: "admin:panel"
+    }]);
 
     if (
       messageId &&
-      await editAdminMessage(
-        env,
-        chatId,
-        messageId,
-        text,
-        buttons
-      )
+      await editAdminMessage(env, chatId, messageId, text, buttons)
     ) {
-
       return;
-
     }
 
-
-    await sendAdminMessage(
-      env,
-      chatId,
-      text,
-      buttons
-    );
+    await sendAdminMessage(env, chatId, text, buttons);
 
   } catch (error) {
 
