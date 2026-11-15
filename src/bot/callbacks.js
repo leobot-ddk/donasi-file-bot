@@ -364,7 +364,18 @@ async function handleAdminCallback(
 
   }
 
+  // ====================================================
+  // USER LIST PAGINATION
+  // ====================================================
 
+  if (data.startsWith("admin:users:page:")) {
+    const page = Number(data.substring("admin:users:page:".length));
+    await answerCallback(env, callback.id);
+    await showUsers(env, chatId, messageId, Number.isInteger(page) && page >= 0 ? page : 0);
+    return true;
+  }
+
+  
   // ====================================================
   // USER LIST
   // ====================================================
