@@ -1440,52 +1440,44 @@ export async function blockUser(
   chatId,
   adminId,
   userId,
-  messageId = null
+  messageId = null,
+  page = 0
 ) {
-
   try {
+    const targetTelegramId = String(userId ?? "").trim();
+    const adminTelegramId = String(adminId ?? "").trim();
 
-    await insert(
-      env,
-      "blocked_users",
-      {
+    if (!/^\d+$/.test(targetTelegramId)) {
+      throw new Error(`Invalid target Telegram ID: ${JSON.stringify(userId)}`);
+    }
 
-        telegram_user_id:
-          Number(userId),
+    if (!/^\d+$/.test(adminTelegramId)) {
+      throw new Error(`Invalid admin Telegram ID: ${JSON.stringify(adminId)}`);
+    }
 
-        blocked_by:
-          Number(adminId),
+    if (targetTelegramId === adminTelegramId) {
+      throw new Error("Admin cannot block their own account.");
+    }
 
-        reason:
-          "Blocked by admin"
+    await insert(env, "blocked_users", {
+      telegram_user_id: targetTelegramId,
+      blocked_by: adminTelegramId,
+      reason: "Blocked by admin"
+    });
 
-      }
-    );
-
-
-    await showUsers(
-      env,
-      chatId,
-      messageId
-    );
-
+    await showUsers(env, chatId, messageId, page);
+    return true;
   } catch (error) {
-
-    console.error(
-      "ADMIN BLOCK USER ERROR:",
-      error
-    );
-
+    console.error("ADMIN BLOCK USER ERROR:", error);
 
     await sendAdminMessage(
       env,
       chatId,
-
-      "❌ Gagal memblokir user."
+      "❌ Gagal memblokir user. Periksa log Cloudflare untuk detailnya."
     );
 
+    return false;
   }
-
 }
 
 
