@@ -414,13 +414,13 @@ async function handleAdminCallback(
     )
   ) {
 
-    const targetUserId =
-      data.substring(
-        "admin:block:".length
-      );
+    const blockParts = data.substring("admin:block:".length).split(":");
+    const targetUserId = String(blockParts[0] ?? "").trim();
+    const requestedPage = blockParts[1] ?? "0";
+    const page = /^\d+$/.test(requestedPage) ? Number(requestedPage) : 0;
 
 
-    if (!targetUserId) {
+    if (!/^\d+$/.test(targetUserId)) {
 
       await answerCallback(
         env,
@@ -449,27 +449,26 @@ async function handleAdminCallback(
     }
 
 
-    await answerCallback(
-      env,
-      callback.id,
-      "🔴 User diblokir."
-    );
-
-
-    await blockUser(
+    const blocked = await blockUser(
       env,
       chatId,
       userId,
       targetUserId,
-      messageId
+      messageId,
+      page
     );
 
+    await answerCallback(
+      env,
+      callback.id,
+      blocked ? "🔴 User berhasil diblokir." : "❌ Gagal memblokir user."
+    );
 
     return true;
 
   }
 
-
+  
   // ====================================================
   // UNBLOCK USER
   // ====================================================
